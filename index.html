@@ -1,0 +1,1593 @@
+import io
+import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
+import pandas as pd
+import streamlit as st
+
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+
+st.set_page_config(
+    page_title="FinExtract • Annual Report Scanner",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# =========================================================
+# STYLE
+# =========================================================
+
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: #f5f7fb;
+    }
+
+    .hero {
+        padding: 28px 30px;
+        border-radius: 24px;
+        margin-bottom: 22px;
+        background: linear-gradient(
+            135deg,
+            #101828 0%,
+            #253b80 55%,
+            #5b2c83 100%
+        );
+        color: white;
+        box-shadow: 0 12px 30px rgba(16,24,40,.16);
+    }
+
+    .hero h1 {
+        margin: 0;
+        font-size: 2.35rem;
+    }
+
+    .hero p {
+        margin: 8px 0 0;
+        color: #dbe4ff;
+        font-size: 1.02rem;
+    }
+
+    .card {
+        background: white;
+        padding: 18px 20px;
+        border-radius: 18px;
+        border: 1px solid #e4e7ec;
+        box-shadow: 0 5px 16px rgba(16,24,40,.05);
+    }
+
+    .small {
+        color: #667085;
+        font-size: .82rem;
+    }
+
+    .evidence {
+        background: #f8fafc;
+        border-left: 4px solid #7f56d9;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-family: ui-monospace,
+                     SFMono-Regular,
+                     Menlo,
+                     monospace;
+        font-size: .82rem;
+        white-space: pre-wrap;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+st.markdown(
+    """
+    <div class="hero">
+        <h1>📊 FinExtract</h1>
+        <p>
+            Annual Report →
+            Laba Bersih • Arus Kas Operasi • Total Aset
+        </p>
+        <p class="small" style="color:#c7d2fe">
+            Evidence-first extraction.
+            Tidak mengarang angka ketika bukti tidak cukup.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# =========================================================
+# TARGET
+# =========================================================
+
+TARGETS = {
+
+    "LABA BERSIH": [
+        r"laba\s+neto\s+tahun\s+berjalan",
+        r"laba\s+bersih\s+tahun\s+berjalan",
+        r"net\s+income\s+for\s+the\s+year",
+        r"profit\s+for\s+the\s+year",
+        r"laba\s+neto\s*$",
+        r"laba\s+bersih\s*$",
+    ],
+
+    "ARUS KAS AKTIVITAS OPERASI": [
+        r"arus\s+kas\s+(?:diperoleh|digunakan).*?aktivitas\s+operasi",
+        r"kas\s+neto\s+diperoleh.*?aktivitas\s+operasi",
+        r"cash\s+flow\s+provided\s+by.*?operating\s+activities",
+        r"cash\s+flows?.*?operating\s+activities",
+        r"operating\s+activities",
+    ],
+
+    "TOTAL ASET": [
+        r"jumlah\s+aset",
+        r"total\s+aset",
+        r"total\s+assets",
+    ],
+}
+
+
+# =========================================================
+# SATUAN
+# =========================================================
+
+UNIT_MULTIPLIERS = {
+
+    "rupiah":
+        Decimal("1"),
+
+    "juta":
+        Decimal("1000000"),
+
+    "million":
+        Decimal("1000000"),
+
+    "miliar":
+        Decimal("1000000000"),
+
+    "milyar":
+        Decimal("1000000000"),
+
+    "billion":
+        Decimal("1000000000"),
+
+    "triliun":
+        Decimal("1000000000000"),
+
+    "trillion":
+        Decimal("1000000000000"),
+
+    "ribu":
+        Decimal("1000"),
+
+    "thousand":
+        Decimal("1000"),
+}
+
+
+# =========================================================
+# TEXT NORMALIZATION
+# =========================================================
+
+def normalize_text(text):
+
+    text = text.replace("\u00a0", " ")
+    text = text.replace("−", "-")
+    text = text.replace("–", "-")
+
+    text = re.sub(
+        r"[ \t]+",
+        " ",
+        text
+    )
+
+    text = re.sub(
+        r"\n{3,}",
+        "\n\n",
+        text
+    )
+
+    return text.strip()
+
+
+# =========================================================
+# DETECT UNIT
+# =========================================================
+
+def detect_unit(text):
+
+    low = text.lower()
+
+    patterns = [
+
+        (
+            r"(?:dalam|in)\s+(?:juta|million)"
+            r"\s+(?:rupiah|rp)",
+            "juta"
+        ),
+
+        (
+            r"(?:dalam|in)\s+"
+            r"(?:miliar|milyar|billion)"
+            r"\s+(?:rupiah|rp)",
+            "miliar"
+        ),
+
+        (
+            r"(?:dalam|in)\s+"
+            r"(?:triliun|trillion)"
+            r"\s+(?:rupiah|rp)",
+            "triliun"
+        ),
+
+        (
+            r"(?:dalam|in)\s+"
+            r"(?:ribu|thousand)"
+            r"\s+(?:rupiah|rp)",
+            "ribu"
+        ),
+
+        (
+            r"(?:dalam|in)\s+"
+            r"(?:rupiah|rp)",
+            "rupiah"
+        ),
+    ]
+
+    for pattern, unit in patterns:
+
+        if re.search(
+            pattern,
+            low,
+            re.I | re.S
+        ):
+            return unit
+
+    return None
+
+
+# =========================================================
+# PARSE NUMBER
+# =========================================================
+
+def parse_number(token):
+
+    raw = token.strip()
+
+    if not raw:
+        return None
+
+    negative = (
+        bool(re.match(r"^\s*\(", raw))
+        or raw.lstrip().startswith("-")
+    )
+
+    s = raw
+
+    s = s.replace("(", "")
+    s = s.replace(")", "")
+    s = s.replace("Rp", "")
+    s = s.replace("rp", "")
+    s = s.replace(" ", "")
+
+    s = re.sub(
+        r"[^0-9,.-]",
+        "",
+        s
+    )
+
+    if not re.search(r"\d", s):
+        return None
+
+    # Contoh:
+    # 1.234,5
+    # 1,234.5
+    # 1234,5
+
+    if "," in s and "." in s:
+
+        if s.rfind(",") > s.rfind("."):
+
+            s = s.replace(".", "")
+            s = s.replace(",", ".")
+
+        else:
+
+            s = s.replace(",", "")
+
+    elif "," in s:
+
+        parts = s.split(",")
+
+        if len(parts[-1]) in (1, 2):
+
+            s = (
+                "".join(parts[:-1])
+                + "."
+                + parts[-1]
+            )
+
+        else:
+
+            s = "".join(parts)
+
+    elif s.count(".") > 1:
+
+        s = s.replace(".", "")
+
+    elif "." in s:
+
+        if len(s.split(".")[-1]) == 3:
+
+            s = s.replace(".", "")
+
+    try:
+
+        value = Decimal(s)
+
+    except InvalidOperation:
+
+        return None
+
+    if negative:
+
+        return -abs(value)
+
+    return value
+
+
+NUMBER_RE = re.compile(
+    r"(?<![A-Za-z])"
+    r"(?:"
+    r"\(\s*-?\s*[0-9][0-9.,]*\s*\)"
+    r"|"
+    r"-\s*[0-9][0-9.,]*"
+    r"|"
+    r"[0-9][0-9.,]*"
+    r")"
+    r"(?![A-Za-z])"
+)
+
+YEAR_RE = re.compile(
+    r"\b(19\d{2}|20\d{2})\b"
+)
+
+
+def extract_numbers(text):
+
+    results = []
+
+    for match in NUMBER_RE.finditer(text):
+
+        token = match.group(0)
+
+        clean = (
+            token
+            .replace("(", "")
+            .replace(")", "")
+            .replace(" ", "")
+        )
+
+        # Jangan membaca tahun sebagai nominal.
+        if re.fullmatch(
+            r"19\d{2}|20\d{2}",
+            clean
+        ):
+            continue
+
+        value = parse_number(token)
+
+        if value is not None:
+
+            results.append(
+                (
+                    match.start(),
+                    match.end(),
+                    token,
+                    value
+                )
+            )
+
+    return results
+
+
+# =========================================================
+# LINES
+# =========================================================
+
+def get_lines(text):
+
+    return [
+        x.strip()
+        for x in normalize_text(text).splitlines()
+        if x.strip()
+    ]
+
+
+# =========================================================
+# FIND YEAR HEADER
+# =========================================================
+
+def year_columns(lines):
+
+    candidates = []
+
+    for i, line in enumerate(lines):
+
+        years = [
+            int(x)
+            for x in YEAR_RE.findall(line)
+        ]
+
+        years = list(
+            dict.fromkeys(years)
+        )
+
+        if 2 <= len(years) <= 8:
+
+            candidates.append(
+                (
+                    i,
+                    years
+                )
+            )
+
+    if not candidates:
+
+        return None
+
+    candidates.sort(
+        key=lambda x: (
+            -len(x[1]),
+            x[0]
+        )
+    )
+
+    return candidates[0]
+
+
+# =========================================================
+# BUILD SEARCH WINDOWS
+# =========================================================
+
+def build_windows(
+    lines,
+    patterns,
+    radius=3
+):
+
+    hits = []
+
+    for i, line in enumerate(lines):
+
+        low = line.lower()
+
+        if any(
+            re.search(
+                pattern,
+                low,
+                re.I
+            )
+            for pattern in patterns
+        ):
+
+            start = max(
+                0,
+                i - radius
+            )
+
+            end = min(
+                len(lines),
+                i + radius + 1
+            )
+
+            hits.append(
+                (
+                    i,
+                    lines[start:end]
+                )
+            )
+
+    return hits
+
+
+# =========================================================
+# SCORE
+# =========================================================
+
+def score_candidate(
+    target,
+    years,
+    values,
+    page_unit,
+    line_text
+):
+
+    score = 0
+
+    low = line_text.lower()
+
+    if target == "LABA BERSIH":
+
+        if re.search(
+            r"laba\s+neto\s+tahun\s+berjalan"
+            r"|net\s+income\s+for\s+the\s+year",
+            low
+        ):
+            score += 50
+
+        elif re.search(
+            r"laba\s+bersih|laba\s+neto",
+            low
+        ):
+            score += 30
+
+    elif target == "ARUS KAS AKTIVITAS OPERASI":
+
+        if re.search(
+            r"aktivitas\s+operasi"
+            r"|operating\s+activities",
+            low
+        ):
+            score += 45
+
+        if re.search(
+            r"arus\s+kas"
+            r"|cash\s+flow",
+            low
+        ):
+            score += 15
+
+    else:
+
+        if re.search(
+            r"jumlah\s+aset"
+            r"|total\s+aset"
+            r"|total\s+assets",
+            low
+        ):
+            score += 55
+
+    if page_unit:
+
+        score += 15
+
+    if years and values:
+
+        score += 10
+
+    if len(values) == len(years):
+
+        score += 20
+
+    elif len(values) >= 1:
+
+        score += 5
+
+    return score
+
+
+# =========================================================
+# EXTRACT PAGE CANDIDATES
+# =========================================================
+
+def extract_page_candidates(
+    page_text,
+    page_number
+):
+
+    lines = get_lines(page_text)
+
+    unit = detect_unit(page_text)
+
+    year_header = year_columns(lines)
+
+    years = (
+        year_header[1]
+        if year_header
+        else []
+    )
+
+    results = []
+
+    for target, patterns in TARGETS.items():
+
+        for hit_i, window in build_windows(
+            lines,
+            patterns,
+            radius=4
+        ):
+
+            joined = " | ".join(window)
+
+            candidates = extract_numbers(
+                joined
+            )
+
+            values = [
+                x[3]
+                for x in candidates
+            ]
+
+            if years and len(values) > len(years):
+
+                values = values[-len(years):]
+
+            score = score_candidate(
+                target,
+                years,
+                values,
+                unit,
+                lines[hit_i]
+            )
+
+            if not values:
+
+                continue
+
+            results.append(
+                {
+                    "target": target,
+                    "page": page_number,
+                    "years": years,
+                    "values": values,
+                    "unit": unit,
+                    "score": score,
+                    "evidence": joined[:1200],
+                    "hit_line": lines[hit_i],
+                }
+            )
+
+    return results
+
+
+# =========================================================
+# READ PDF
+# =========================================================
+
+def extract_pdf(uploaded_bytes):
+
+    pages = []
+
+    if fitz:
+
+        doc = fitz.open(
+            stream=uploaded_bytes,
+            filetype="pdf"
+        )
+
+        for i, page in enumerate(doc):
+
+            text = (
+                page.get_text("text")
+                or ""
+            )
+
+            pages.append(
+                (
+                    i + 1,
+                    text
+                )
+            )
+
+        doc.close()
+
+    elif pdfplumber:
+
+        with pdfplumber.open(
+            io.BytesIO(uploaded_bytes)
+        ) as pdf:
+
+            for i, page in enumerate(
+                pdf.pages
+            ):
+
+                pages.append(
+                    (
+                        i + 1,
+                        page.extract_text()
+                        or ""
+                    )
+                )
+
+    else:
+
+        raise RuntimeError(
+            "Install PyMuPDF atau pdfplumber."
+        )
+
+    candidates = []
+
+    for page_number, text in pages:
+
+        if text.strip():
+
+            candidates.extend(
+                extract_page_candidates(
+                    text,
+                    page_number
+                )
+            )
+
+    return pages, candidates
+
+
+# =========================================================
+# CHOOSE BEST CANDIDATE
+# =========================================================
+
+def choose_candidate(
+    candidates,
+    target,
+    requested_year
+):
+
+    rows = [
+        c
+        for c in candidates
+        if c["target"] == target
+    ]
+
+    ranked = []
+
+    for c in rows:
+
+        years = c["years"]
+        values = c["values"]
+
+        if requested_year in years:
+
+            idx = years.index(
+                requested_year
+            )
+
+            if idx < len(values):
+
+                rank = (
+                    c["score"]
+                    + 100
+                )
+
+                ranked.append(
+                    (
+                        rank,
+                        c,
+                        values[idx],
+                        idx
+                    )
+                )
+
+        elif (
+            len(values) == 1
+            and not years
+        ):
+
+            ranked.append(
+                (
+                    c["score"] - 20,
+                    c,
+                    values[0],
+                    0
+                )
+            )
+
+    if not ranked:
+
+        return None
+
+    ranked.sort(
+        key=lambda x: (
+            -x[0],
+            x[1]["page"]
+        )
+    )
+
+    best = ranked[0]
+
+    ambiguous = False
+
+    if len(ranked) > 1:
+
+        second = ranked[1]
+
+        if (
+            best[0] - second[0] < 12
+            and best[2] != second[2]
+        ):
+
+            ambiguous = True
+
+    return {
+        "candidate": best[1],
+        "raw_value": best[2],
+        "index": best[3],
+        "ambiguous": ambiguous,
+        "rank": best[0],
+    }
+
+
+# =========================================================
+# CONVERT TO RUPIAH
+# =========================================================
+
+def convert_to_rupiah(
+    value,
+    unit
+):
+
+    multiplier = UNIT_MULTIPLIERS.get(
+        unit or "rupiah",
+        Decimal("1")
+    )
+
+    result = (
+        value * multiplier
+    ).quantize(
+        Decimal("1"),
+        rounding=ROUND_HALF_UP
+    )
+
+    return int(result)
+
+
+# =========================================================
+# FORMAT
+# =========================================================
+
+def fmt_int(number):
+
+    return (
+        f"{number:,}"
+        .replace(",", ".")
+    )
+
+
+# =========================================================
+# COMPANY CODE
+# =========================================================
+
+def detect_company_code(text):
+
+    patterns = [
+
+        r"(?:ticker|kode\s+saham|stock\s+code)"
+        r"\s*[:\-]?\s*([A-Z]{2,6})\b",
+
+        r"\b([A-Z]{2,6})\s+Stock\s+Performance\b",
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            text,
+            re.I
+        )
+
+        if match:
+
+            return match.group(1).upper()
+
+    return ""
+
+
+# =========================================================
+# MAKE RESULT
+# =========================================================
+
+def make_result(
+    upload_name,
+    pages,
+    candidates,
+    requested_years
+):
+
+    full_text = "\n".join(
+        text
+        for _, text in pages
+    )
+
+    code = detect_company_code(
+        full_text
+    )
+
+    output = []
+
+    for year in requested_years:
+
+        row = {
+
+            "File": upload_name,
+
+            "Tahun": year,
+
+            "Kode": code,
+
+            "Laba Bersih": None,
+
+            "Arus Kas Operasi": None,
+
+            "Total Aset": None,
+
+            "Halaman Laba": None,
+
+            "Halaman Arus Kas": None,
+
+            "Halaman Aset": None,
+
+            "Status": "REVIEW",
+
+            "Catatan": "",
+        }
+
+        warnings = []
+
+        mappings = [
+
+            (
+                "LABA BERSIH",
+                "Laba Bersih",
+                "Halaman Laba"
+            ),
+
+            (
+                "ARUS KAS AKTIVITAS OPERASI",
+                "Arus Kas Operasi",
+                "Halaman Arus Kas"
+            ),
+
+            (
+                "TOTAL ASET",
+                "Total Aset",
+                "Halaman Aset"
+            ),
+        ]
+
+        for (
+            target,
+            column,
+            page_column
+        ) in mappings:
+
+            picked = choose_candidate(
+                candidates,
+                target,
+                year
+            )
+
+            if not picked:
+
+                warnings.append(
+                    f"{column} tidak ditemukan untuk {year}"
+                )
+
+                continue
+
+            candidate = picked[
+                "candidate"
+            ]
+
+            unit = (
+                candidate["unit"]
+                or "rupiah"
+            )
+
+            value = convert_to_rupiah(
+                picked["raw_value"],
+                unit
+            )
+
+            row[column] = value
+
+            row[page_column] = (
+                candidate["page"]
+            )
+
+            if not candidate["unit"]:
+
+                warnings.append(
+                    f"Satuan {column} "
+                    f"tidak terdeteksi; "
+                    f"diasumsikan rupiah"
+                )
+
+            if picked["ambiguous"]:
+
+                warnings.append(
+                    f"{column} memiliki "
+                    f"lebih dari satu kandidat"
+                )
+
+            if picked["rank"] < 100:
+
+                warnings.append(
+                    f"Bukti {column} lemah"
+                )
+
+        missing = [
+
+            key
+
+            for key in (
+                "Laba Bersih",
+                "Arus Kas Operasi",
+                "Total Aset"
+            )
+
+            if row[key] is None
+        ]
+
+        if not missing and not warnings:
+
+            row["Status"] = "CONFIRMED"
+
+        elif missing:
+
+            row["Status"] = "REVIEW"
+
+        else:
+
+            row["Status"] = "CHECK"
+
+        row["Catatan"] = (
+            "; ".join(warnings)
+            if warnings
+            else
+            "Tiga pos ditemukan dengan "
+            "pemetaan tahun + satuan."
+        )
+
+        output.append(row)
+
+    return pd.DataFrame(output)
+
+
+# =========================================================
+# SIDEBAR
+# =========================================================
+
+with st.sidebar:
+
+    st.subheader(
+        "⚙️ Pengaturan ekstraksi"
+    )
+
+    years_text = st.text_input(
+        "Tahun yang dicari",
+        "2021,2022,2023,2024,2025"
+    )
+
+    try:
+
+        requested_years = [
+            int(x.strip())
+            for x in years_text.split(",")
+            if x.strip()
+        ]
+
+    except ValueError:
+
+        requested_years = []
+
+        st.error(
+            "Format tahun harus seperti "
+            "2021,2022,2023"
+        )
+
+    st.divider()
+
+    st.markdown(
+        "**Target wajib**"
+    )
+
+    st.write(
+        "✓ Laba Bersih"
+    )
+
+    st.write(
+        "✓ Arus Kas Aktivitas Operasi"
+    )
+
+    st.write(
+        "✓ Total Aset"
+    )
+
+    st.divider()
+
+    st.caption(
+        "Jika bukti tahun/satuan/pos "
+        "tidak cukup, aplikasi menandai "
+        "CHECK/REVIEW. Jangan dianggap nol."
+    )
+
+
+# =========================================================
+# UPLOAD
+# =========================================================
+
+uploaded = st.file_uploader(
+    "📄 Upload satu atau beberapa Annual Report PDF",
+    type=["pdf"],
+    accept_multiple_files=True,
+    help=(
+        "PDF text-based paling akurat. "
+        "PDF scan/image-only belum menggunakan OCR "
+        "di versi ini."
+    ),
+)
+
+
+if not uploaded:
+
+    c1, c2, c3 = st.columns(3)
+
+    cards = [
+
+        (
+            c1,
+            "1 • Upload",
+            "Masukkan Annual Report PDF."
+        ),
+
+        (
+            c2,
+            "2 • Extract",
+            "Cari tiga pos berdasarkan "
+            "istilah laporan keuangan."
+        ),
+
+        (
+            c3,
+            "3 • Validate",
+            "Lihat halaman, bukti teks, "
+            "satuan, dan status."
+        ),
+    ]
+
+    for col, title, body in cards:
+
+        with col:
+
+            st.markdown(
+                f"""
+                <div class="card">
+                    <b>{title}</b><br>
+                    <span class="small">
+                        {body}
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    st.info(
+        "⚠️ Evidence-first: "
+        "kalau data tidak jelas, aplikasi "
+        "tidak menebak."
+    )
+
+    st.stop()
+
+
+if not requested_years:
+
+    st.error(
+        "Masukkan minimal satu tahun valid."
+    )
+
+    st.stop()
+
+
+# =========================================================
+# PROCESS
+# =========================================================
+
+all_rows = []
+all_evidence = []
+
+progress = st.progress(0)
+
+for idx, file in enumerate(
+    uploaded,
+    start=1
+):
+
+    data = file.getvalue()
+
+    try:
+
+        pages, candidates = extract_pdf(
+            data
+        )
+
+        df = make_result(
+            file.name,
+            pages,
+            candidates,
+            requested_years
+        )
+
+        all_rows.append(df)
+
+        all_evidence.append(
+            (
+                file.name,
+                pages,
+                candidates
+            )
+        )
+
+    except Exception as error:
+
+        st.error(
+            f"{file.name}: "
+            f"gagal diproses — {error}"
+        )
+
+    progress.progress(
+        idx / len(uploaded)
+    )
+
+
+if not all_rows:
+
+    st.error(
+        "Tidak ada PDF yang berhasil diproses."
+    )
+
+    st.stop()
+
+
+result_df = pd.concat(
+    all_rows,
+    ignore_index=True
+)
+
+
+# =========================================================
+# SUMMARY
+# =========================================================
+
+confirmed = int(
+    (
+        result_df["Status"]
+        == "CONFIRMED"
+    ).sum()
+)
+
+check = int(
+    (
+        result_df["Status"]
+        == "CHECK"
+    ).sum()
+)
+
+review = int(
+    (
+        result_df["Status"]
+        == "REVIEW"
+    ).sum()
+)
+
+
+m1, m2, m3, m4 = st.columns(4)
+
+m1.metric(
+    "📄 PDF",
+    len(uploaded)
+)
+
+m2.metric(
+    "✅ Confirmed",
+    confirmed
+)
+
+m3.metric(
+    "🟠 Check",
+    check
+)
+
+m4.metric(
+    "🔴 Review",
+    review
+)
+
+
+# =========================================================
+# TABLE
+# =========================================================
+
+st.markdown(
+    "### 📋 Hasil ekstraksi"
+)
+
+display_df = result_df.copy()
+
+for column in [
+    "Laba Bersih",
+    "Arus Kas Operasi",
+    "Total Aset"
+]:
+
+    display_df[column] = (
+        display_df[column]
+        .apply(
+            lambda x:
+                fmt_int(x)
+                if pd.notna(x)
+                else ""
+        )
+    )
+
+
+st.dataframe(
+    display_df,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# =========================================================
+# DOWNLOAD CSV / EXCEL
+# =========================================================
+
+csv_bytes = (
+    result_df
+    .to_csv(
+        index=False
+    )
+    .encode("utf-8-sig")
+)
+
+
+excel_buffer = io.BytesIO()
+
+with pd.ExcelWriter(
+    excel_buffer,
+    engine="openpyxl"
+) as writer:
+
+    result_df.to_excel(
+        writer,
+        index=False,
+        sheet_name="Hasil Ekstraksi"
+    )
+
+    worksheet = (
+        writer.book[
+            "Hasil Ekstraksi"
+        ]
+    )
+
+    for column in worksheet.columns:
+
+        max_length = max(
+            len(
+                str(
+                    cell.value
+                    or ""
+                )
+            )
+            for cell in column
+        )
+
+        worksheet.column_dimensions[
+            column[0].column_letter
+        ].width = min(
+            max(
+                max_length + 2,
+                12
+            ),
+            32
+        )
+
+
+excel_bytes = (
+    excel_buffer
+    .getvalue()
+)
+
+
+b1, b2 = st.columns(2)
+
+with b1:
+
+    st.download_button(
+        "⬇️ Download CSV",
+        csv_bytes,
+        "hasil_finextract.csv",
+        "text/csv",
+        use_container_width=True
+    )
+
+
+with b2:
+
+    st.download_button(
+        "⬇️ Download Excel",
+        excel_bytes,
+        "hasil_finextract.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+
+# =========================================================
+# EVIDENCE
+# =========================================================
+
+st.markdown(
+    "### 🔎 Bukti & validasi"
+)
+
+st.caption(
+    "CONFIRMED = tiga nilai ditemukan "
+    "dengan pemetaan tahun dan satuan jelas. "
+    "CHECK = ada sinyal ambigu/lemah. "
+    "REVIEW = data belum lengkap atau bukti "
+    "tidak cukup."
+)
+
+
+for (
+    file_name,
+    pages,
+    candidates
+) in all_evidence:
+
+    st.markdown(
+        f"#### 📄 {file_name}"
+    )
+
+    file_rows = result_df[
+        result_df["File"]
+        == file_name
+    ]
+
+    for _, row in file_rows.iterrows():
+
+        with st.expander(
+            f"{row['Tahun']} • {row['Status']}",
+            expanded=(
+                row["Status"]
+                != "CONFIRMED"
+            )
+        ):
+
+            columns = st.columns(3)
+
+            mappings = [
+
+                (
+                    "Laba Bersih",
+                    "Halaman Laba"
+                ),
+
+                (
+                    "Arus Kas Operasi",
+                    "Halaman Arus Kas"
+                ),
+
+                (
+                    "Total Aset",
+                    "Halaman Aset"
+                ),
+            ]
+
+            for col, (
+                name,
+                page_name
+            ) in zip(
+                columns,
+                mappings
+            ):
+
+                with col:
+
+                    st.markdown(
+                        f"**{name}**"
+                    )
+
+                    value = row[name]
+
+                    st.write(
+                        fmt_int(value)
+                        if pd.notna(value)
+                        else "—"
+                    )
+
+                    page = row[
+                        page_name
+                    ]
+
+                    st.caption(
+                        "Halaman: "
+                        + (
+                            str(int(page))
+                            if pd.notna(page)
+                            else "—"
+                        )
+                    )
+
+            st.markdown(
+                f"**Catatan:** "
+                f"{row['Catatan']}"
+            )
+
+            evidence_targets = [
+
+                (
+                    "LABA BERSIH",
+                    "Laba"
+                ),
+
+                (
+                    "ARUS KAS AKTIVITAS OPERASI",
+                    "Arus Kas"
+                ),
+
+                (
+                    "TOTAL ASET",
+                    "Aset"
+                ),
+            ]
+
+            for target, label in (
+                evidence_targets
+            ):
+
+                picked = choose_candidate(
+                    candidates,
+                    target,
+                    int(row["Tahun"])
+                )
+
+                if picked:
+
+                    candidate = picked[
+                        "candidate"
+                    ]
+
+                    unit = (
+                        candidate["unit"]
+                        or "rupiah (diasumsikan)"
+                    )
+
+                    st.markdown(
+                        f"**Bukti {label} — "
+                        f"halaman "
+                        f"{candidate['page']} "
+                        f"— satuan {unit}**"
+                    )
+
+                    st.markdown(
+                        f"""
+                        <div class="evidence">
+                        {candidate["evidence"]}
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+
+st.markdown("---")
+
+st.caption(
+    "FinExtract tidak menjamin kebenaran absolut. "
+    "Untuk dataset skripsi, setiap nilai CHECK/REVIEW "
+    "wajib diverifikasi terhadap tabel asli pada "
+    "halaman yang ditunjukkan."
+)
