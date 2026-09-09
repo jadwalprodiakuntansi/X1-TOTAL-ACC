@@ -1,1842 +1,725 @@
 <!DOCTYPE html>
 <html lang="id">
-
 <head>
-
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+<title>FinExtract — Financial Statement Extractor</title>
 
-<title>FinExtract — Financial Report Extractor</title>
-
-<meta
-    name="description"
-    content="Ekstraksi Laba Bersih, Arus Kas Operasi dan Total Aset dari Annual Report PDF."
->
-
-<!-- =====================================================
-     LIBRARY
-====================================================== -->
-
-<!-- PDF.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-
-<!-- Tesseract OCR -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
-<!-- SheetJS untuk XLSX -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-
-<!-- =====================================================
-     CSS
-====================================================== -->
-
 <style>
-
 :root{
-
-    --bg:#f5f7fb;
-
-    --white:#ffffff;
-
+    --bg:#f4f6fb;
+    --card:#fff;
     --text:#101828;
-
     --muted:#667085;
-
     --border:#e4e7ec;
-
     --primary:#5b4bdb;
-
     --primary2:#7c5cff;
-
     --green:#039855;
-
     --greenbg:#ecfdf3;
-
     --yellow:#b54708;
-
     --yellowbg:#fffaeb;
-
     --red:#d92d20;
-
     --redbg:#fef3f2;
-
-    --shadow:
-        0 15px 45px rgba(16,24,40,.07);
-
+    --shadow:0 15px 45px rgba(16,24,40,.07);
 }
 
-*{
-
-    box-sizing:border-box;
-
-}
-
-html{
-
-    scroll-behavior:smooth;
-
-}
+*{box-sizing:border-box}
 
 body{
-
     margin:0;
-
-    font-family:
-
-        Inter,
-
-        ui-sans-serif,
-
-        system-ui,
-
-        -apple-system,
-
-        BlinkMacSystemFont,
-
-        "Segoe UI",
-
-        sans-serif;
-
+    font-family:Inter,Segoe UI,Arial,sans-serif;
     color:var(--text);
-
     background:
-
-        radial-gradient(
-            circle at 10% 0%,
-            rgba(91,75,219,.12),
-            transparent 28%
-        ),
-
-        radial-gradient(
-            circle at 90% 10%,
-            rgba(124,92,255,.10),
-            transparent 25%
-        ),
-
+        radial-gradient(circle at 5% 0%,rgba(91,75,219,.12),transparent 25%),
+        radial-gradient(circle at 95% 10%,rgba(124,92,255,.10),transparent 25%),
         var(--bg);
-
 }
 
-button,
-input{
-
-    font-family:inherit;
-
-}
-
-
-/* =====================================================
-   BACKGROUND
-====================================================== */
-
-.bg-grid{
-
-    position:fixed;
-
-    inset:0;
-
-    z-index:-10;
-
-    pointer-events:none;
-
-    opacity:.35;
-
-    background-image:
-
-        linear-gradient(
-            rgba(16,24,40,.035) 1px,
-            transparent 1px
-        ),
-
-        linear-gradient(
-            90deg,
-            rgba(16,24,40,.035) 1px,
-            transparent 1px
-        );
-
-    background-size:35px 35px;
-
-}
-
-.orb{
-
-    position:fixed;
-
-    width:420px;
-
-    height:420px;
-
-    border-radius:50%;
-
-    filter:blur(110px);
-
-    opacity:.10;
-
-    pointer-events:none;
-
-    z-index:-9;
-
-}
-
-.orb.one{
-
-    background:#635bff;
-
-    left:-180px;
-
-    top:-180px;
-
-}
-
-.orb.two{
-
-    background:#a855f7;
-
-    right:-200px;
-
-    top:40%;
-
-}
-
-
-/* =====================================================
-   NAVBAR
-====================================================== */
+button,input{font-family:inherit}
 
 .navbar{
-
     height:76px;
-
     padding:0 5%;
-
     display:flex;
-
     align-items:center;
-
     justify-content:space-between;
-
     position:sticky;
-
     top:0;
-
     z-index:100;
-
-    background:
-        rgba(255,255,255,.82);
-
+    background:rgba(255,255,255,.88);
     backdrop-filter:blur(18px);
-
-    border-bottom:
-        1px solid rgba(228,231,236,.85);
-
+    border-bottom:1px solid var(--border);
 }
 
 .brand{
-
     display:flex;
-
     align-items:center;
-
     gap:12px;
-
 }
 
 .brand-icon{
-
     width:44px;
-
     height:44px;
-
     display:grid;
-
     place-items:center;
-
     border-radius:13px;
-
-    color:white;
-
-    font-size:21px;
-
-    background:
-        linear-gradient(
-            135deg,
-            var(--primary),
-            var(--primary2)
-        );
-
-    box-shadow:
-        0 8px 22px
-        rgba(91,75,219,.22);
-
+    color:#fff;
+    font-size:22px;
+    background:linear-gradient(135deg,var(--primary),var(--primary2));
+    box-shadow:0 8px 22px rgba(91,75,219,.25);
 }
 
 .brand-name{
-
+    font-weight:900;
     font-size:18px;
-
-    font-weight:850;
-
-    letter-spacing:-.4px;
-
 }
 
 .brand-sub{
-
     color:var(--muted);
-
     font-size:10px;
-
-    margin-top:1px;
-
+    margin-top:2px;
 }
 
-.live-status{
-
+.live{
     display:flex;
-
     align-items:center;
-
     gap:7px;
-
     color:var(--muted);
-
     font-size:11px;
-
 }
 
-.live-dot{
-
-    width:7px;
-
-    height:7px;
-
+.dot{
+    width:8px;
+    height:8px;
     border-radius:50%;
-
     background:#12b76a;
-
-    box-shadow:
-        0 0 0 4px
-        rgba(18,183,106,.10);
-
+    box-shadow:0 0 0 4px rgba(18,183,106,.1);
 }
-
-
-/* =====================================================
-   CONTAINER
-====================================================== */
 
 .container{
-
-    width:min(
-        1200px,
-        calc(100% - 32px)
-    );
-
+    width:min(1250px,calc(100% - 30px));
     margin:auto;
-
-    padding:42px 0 70px;
-
+    padding:35px 0 70px;
 }
-
-
-/* =====================================================
-   HERO
-====================================================== */
 
 .hero{
-
     position:relative;
-
     overflow:hidden;
-
-    padding:58px;
-
-    border-radius:30px;
-
-    color:white;
-
+    padding:50px;
+    border-radius:28px;
+    color:#fff;
     background:
-
-        radial-gradient(
-            circle at 84% 20%,
-            rgba(255,255,255,.18),
-            transparent 25%
-        ),
-
-        linear-gradient(
-            135deg,
-            #101828 0%,
-            #283b8f 52%,
-            #5b3b87 100%
-        );
-
-    box-shadow:
-        0 25px 65px
-        rgba(32,41,80,.22);
-
-}
-
-.hero::after{
-
-    content:"";
-
-    position:absolute;
-
-    width:330px;
-
-    height:330px;
-
-    right:-150px;
-
-    bottom:-190px;
-
-    border-radius:50%;
-
-    border:
-        1px solid
-        rgba(255,255,255,.16);
-
-    box-shadow:
-
-        0 0 0 50px
-        rgba(255,255,255,.025),
-
-        0 0 0 100px
-        rgba(255,255,255,.018);
-
-}
-
-.badge{
-
-    display:inline-flex;
-
-    padding:7px 11px;
-
-    border-radius:999px;
-
-    font-size:10px;
-
-    font-weight:850;
-
-    letter-spacing:1px;
-
-    background:
-        rgba(255,255,255,.10);
-
-    border:
-        1px solid
-        rgba(255,255,255,.13);
-
+        radial-gradient(circle at 85% 20%,rgba(255,255,255,.15),transparent 25%),
+        linear-gradient(135deg,#101828,#293b8e 55%,#603b8b);
+    box-shadow:0 25px 65px rgba(32,41,80,.22);
 }
 
 .hero h1{
-
-    position:relative;
-
-    z-index:2;
-
-    margin:21px 0 18px;
-
-    max-width:800px;
-
-    font-size:
-        clamp(
-            40px,
-            6vw,
-            70px
-        );
-
-    line-height:.97;
-
-    letter-spacing:-3.5px;
-
+    margin:20px 0 15px;
+    font-size:clamp(38px,6vw,68px);
+    line-height:.98;
+    letter-spacing:-3px;
 }
 
-.hero h1 span{
-
-    display:block;
-
-    color:#c7d2fe;
-
-}
+.hero h1 span{color:#c7d2fe}
 
 .hero p{
-
-    position:relative;
-
-    z-index:2;
-
     max-width:760px;
-
-    margin:0;
-
     color:#dbe4ff;
-
-    line-height:1.75;
-
+    line-height:1.7;
     font-size:14px;
-
 }
 
-.hero-features{
-
-    position:relative;
-
-    z-index:2;
-
-    display:flex;
-
-    flex-wrap:wrap;
-
-    gap:9px;
-
-    margin-top:27px;
-
-}
-
-.hero-features div{
-
-    display:flex;
-
-    align-items:center;
-
-    gap:7px;
-
-    padding:9px 12px;
-
-    border-radius:10px;
-
-    font-size:11px;
-
-    background:
-        rgba(255,255,255,.08);
-
-    border:
-        1px solid
-        rgba(255,255,255,.10);
-
-}
-
-.hero-features span{
-
-    color:#86efac;
-
+.badge{
+    display:inline-flex;
+    padding:7px 11px;
+    border-radius:999px;
+    font-size:10px;
     font-weight:900;
-
+    letter-spacing:1px;
+    background:rgba(255,255,255,.1);
+    border:1px solid rgba(255,255,255,.13);
 }
 
+.features{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:24px;
+}
 
-/* =====================================================
-   CARDS
-====================================================== */
+.features div{
+    padding:9px 12px;
+    border-radius:10px;
+    background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.1);
+    font-size:10px;
+}
+
+.features b{color:#86efac}
 
 .card{
-
     margin-top:20px;
-
-    background:
-        rgba(255,255,255,.92);
-
-    border:
-        1px solid var(--border);
-
-    border-radius:22px;
-
+    background:rgba(255,255,255,.94);
+    border:1px solid var(--border);
+    border-radius:21px;
     box-shadow:var(--shadow);
-
 }
 
+.upload-card{padding:14px}
 
-/* =====================================================
-   UPLOAD
-====================================================== */
-
-.upload-card{
-
-    padding:14px;
-
-}
-
-.drop-zone{
-
-    min-height:300px;
-
+.drop{
+    min-height:280px;
     display:flex;
-
     flex-direction:column;
-
     justify-content:center;
-
     align-items:center;
-
     text-align:center;
-
-    border:
-        2px dashed #cbd5e1;
-
+    border:2px dashed #cbd5e1;
     border-radius:17px;
-
-    transition:.2s ease;
-
+    transition:.2s;
 }
 
-.drop-zone.dragging{
-
+.drop.drag{
     border-color:var(--primary);
-
-    background:
-        rgba(91,75,219,.045);
-
-    transform:scale(.995);
-
+    background:#f8f7ff;
 }
 
 .upload-icon{
-
-    width:74px;
-
-    height:74px;
-
+    width:70px;
+    height:70px;
     display:grid;
-
     place-items:center;
-
-    border-radius:21px;
-
-    margin-bottom:17px;
-
-    font-size:35px;
-
-    background:
-        linear-gradient(
-            135deg,
-            #eeebff,
-            #e4e0ff
-        );
-
+    border-radius:20px;
+    font-size:34px;
+    background:#eeebff;
+    margin-bottom:16px;
 }
 
-.drop-zone h2{
-
+.drop h2{
     margin:0;
-
-    font-size:23px;
-
+    font-size:22px;
 }
 
-.drop-zone p{
-
-    margin:8px 0 20px;
-
+.drop p{
     color:var(--muted);
-
-    font-size:13px;
-
-}
-
-.upload-button{
-
-    cursor:pointer;
-
-}
-
-.upload-button span{
-
-    display:inline-flex;
-
-    padding:12px 19px;
-
-    border-radius:11px;
-
-    color:white;
-
-    background:
-        linear-gradient(
-            135deg,
-            var(--primary),
-            var(--primary2)
-        );
-
     font-size:12px;
+    margin:8px 0 20px;
+}
 
+.upload-btn{
+    display:inline-flex;
+    padding:12px 18px;
+    border-radius:11px;
+    color:white;
+    background:linear-gradient(135deg,var(--primary),var(--primary2));
+    font-size:12px;
     font-weight:800;
-
-    box-shadow:
-        0 8px 20px
-        rgba(91,75,219,.18);
-
-    transition:.2s;
-
+    cursor:pointer;
 }
 
-.upload-button span:hover{
-
-    transform:translateY(-1px);
-
-}
-
-.upload-note{
-
-    margin-top:12px;
-
+.note{
     color:#98a2b3;
-
-    font-size:10px;
-
+    font-size:9px;
+    margin-top:11px;
 }
 
+.section{margin-top:30px}
 
-/* =====================================================
-   SECTION
-====================================================== */
-
-.section{
-
-    margin-top:34px;
-
-}
-
-.section-header{
-
+.section-head{
     display:flex;
-
-    align-items:center;
-
     justify-content:space-between;
-
+    align-items:center;
     gap:15px;
-
-    margin-bottom:15px;
-
+    margin-bottom:13px;
 }
 
 .eyebrow{
-
     color:var(--primary);
-
     font-size:9px;
-
     font-weight:900;
-
     letter-spacing:1.4px;
-
-    margin-bottom:5px;
-
 }
 
-.section-title{
-
-    margin:0;
-
+.title{
+    margin:4px 0 0;
     font-size:21px;
-
     letter-spacing:-.5px;
-
 }
-
-
-/* =====================================================
-   SETTINGS
-====================================================== */
 
 .settings{
-
-    padding:24px;
-
+    padding:22px;
 }
 
 .year-row{
-
     display:flex;
-
-    gap:10px;
-
+    gap:9px;
 }
 
 .year-input{
-
     flex:1;
-
-    min-width:0;
-
-    height:48px;
-
-    border:
-        1px solid var(--border);
-
+    height:47px;
+    padding:0 13px;
+    border:1px solid var(--border);
     border-radius:11px;
-
-    padding:0 14px;
-
     outline:none;
-
-    font-size:13px;
-
-    background:white;
-
+    font-size:12px;
 }
 
 .year-input:focus{
-
     border-color:var(--primary);
+    box-shadow:0 0 0 4px rgba(91,75,219,.08);
+}
 
-    box-shadow:
-        0 0 0 4px
-        rgba(91,75,219,.08);
-
+.primary,.secondary,.ghost{
+    border:0;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:800;
+    font-size:11px;
 }
 
 .primary{
-
-    height:48px;
-
-    border:0;
-
-    padding:0 19px;
-
-    border-radius:11px;
-
+    height:47px;
+    padding:0 18px;
     color:white;
-
-    cursor:pointer;
-
-    font-size:12px;
-
-    font-weight:800;
-
-    background:
-        linear-gradient(
-            135deg,
-            var(--primary),
-            var(--primary2)
-        );
-
-    box-shadow:
-        0 8px 20px
-        rgba(91,75,219,.20);
-
-}
-
-.primary:hover:not(:disabled){
-
-    transform:translateY(-1px);
-
+    background:linear-gradient(135deg,var(--primary),var(--primary2));
 }
 
 .primary:disabled{
-
     opacity:.45;
-
     cursor:not-allowed;
-
-    box-shadow:none;
-
 }
 
 .secondary{
-
     height:42px;
-
     padding:0 14px;
-
-    border:0;
-
-    border-radius:10px;
-
     color:var(--primary);
-
-    background:#f1efff;
-
-    cursor:pointer;
-
-    font-size:11px;
-
-    font-weight:800;
-
+    background:#efedff;
 }
 
 .ghost{
-
-    padding:9px 12px;
-
-    border:
-        1px solid var(--border);
-
-    border-radius:10px;
-
+    padding:8px 11px;
     background:white;
-
     color:var(--muted);
-
-    cursor:pointer;
-
-    font-size:10px;
-
-    font-weight:700;
-
-}
-
-.ghost:hover{
-
-    color:var(--red);
-
-    border-color:#fecdca;
-
+    border:1px solid var(--border);
 }
 
 .targets{
-
     display:flex;
-
     flex-wrap:wrap;
-
     gap:8px;
-
-    margin-top:15px;
-
+    margin-top:13px;
 }
 
 .target{
-
-    padding:8px 11px;
-
-    border:
-        1px solid var(--border);
-
+    padding:8px 10px;
+    border:1px solid var(--border);
     border-radius:9px;
-
     background:#f8fafc;
-
     font-size:10px;
-
     font-weight:700;
-
 }
 
-.target b{
-
-    color:var(--primary);
-
-    margin-right:5px;
-
-}
-
-
-/* =====================================================
-   FILE LIST
-====================================================== */
+.target b{color:var(--primary)}
 
 .file-grid{
-
     display:grid;
-
-    grid-template-columns:
-        repeat(
-            auto-fill,
-            minmax(250px,1fr)
-        );
-
+    grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
     gap:10px;
-
 }
 
-.file-item{
-
+.file{
     display:flex;
-
     align-items:center;
-
     gap:11px;
-
-    padding:13px;
-
-    border:
-        1px solid var(--border);
-
+    padding:12px;
+    border:1px solid var(--border);
     border-radius:13px;
-
     background:white;
-
 }
 
 .file-icon{
-
     width:38px;
-
     height:38px;
-
     display:grid;
-
     place-items:center;
-
-    flex-shrink:0;
-
     border-radius:10px;
-
     background:#fff1f0;
-
-    font-size:18px;
-
 }
 
 .file-info{
-
     min-width:0;
-
     flex:1;
-
 }
 
 .file-name{
-
     overflow:hidden;
-
-    text-overflow:ellipsis;
-
     white-space:nowrap;
-
+    text-overflow:ellipsis;
     font-size:11px;
-
     font-weight:800;
-
 }
 
 .file-size{
-
-    margin-top:3px;
-
     color:var(--muted);
-
     font-size:9px;
-
+    margin-top:3px;
 }
 
-
-/* =====================================================
-   PROGRESS
-====================================================== */
-
 .progress{
-
-    padding:21px 23px;
-
+    padding:21px;
 }
 
 .progress-top{
-
     display:flex;
-
-    align-items:center;
-
     justify-content:space-between;
-
-    gap:15px;
-
+    align-items:center;
 }
 
 .progress-title{
-
     font-size:12px;
-
     font-weight:800;
-
 }
 
 .progress-detail{
-
-    margin-top:4px;
-
     color:var(--muted);
-
-    font-size:10px;
-
-}
-
-.progress-track{
-
-    height:8px;
-
-    margin-top:14px;
-
-    overflow:hidden;
-
-    border-radius:999px;
-
-    background:#eaecf0;
-
-}
-
-.progress-bar{
-
-    width:0%;
-
-    height:100%;
-
-    border-radius:999px;
-
-    background:
-        linear-gradient(
-            90deg,
-            var(--primary),
-            #8b5cf6
-        );
-
-    transition:
-        width .25s ease;
-
-}
-
-.progress-status{
-
-    min-height:17px;
-
-    margin-top:8px;
-
-    color:var(--muted);
-
     font-size:9px;
-
+    margin-top:4px;
 }
 
+.track{
+    height:8px;
+    background:#eaecf0;
+    border-radius:999px;
+    overflow:hidden;
+    margin-top:14px;
+}
 
-/* =====================================================
-   METRICS
-====================================================== */
+.bar{
+    height:100%;
+    width:0;
+    background:linear-gradient(90deg,var(--primary),#8b5cf6);
+    transition:.25s;
+}
+
+.status-text{
+    min-height:16px;
+    color:var(--muted);
+    font-size:9px;
+    margin-top:8px;
+}
 
 .metrics{
-
     display:grid;
-
-    grid-template-columns:
-        repeat(4,1fr);
-
+    grid-template-columns:repeat(4,1fr);
     gap:12px;
-
 }
 
 .metric{
-
-    padding:19px;
-
-    border:
-        1px solid var(--border);
-
-    border-radius:17px;
-
+    padding:18px;
+    border:1px solid var(--border);
+    border-radius:16px;
     background:white;
-
-    box-shadow:
-        0 8px 25px
-        rgba(16,24,40,.04);
-
 }
 
 .metric-icon{
-
     width:34px;
-
     height:34px;
-
     display:grid;
-
     place-items:center;
-
     border-radius:9px;
-
     background:#f2f4f7;
-
-    margin-bottom:13px;
-
-    font-size:14px;
-
-    font-weight:900;
-
+    margin-bottom:12px;
 }
 
 .metric-label{
-
     color:var(--muted);
-
     font-size:8px;
-
     font-weight:900;
-
     letter-spacing:1px;
-
 }
 
 .metric-value{
-
-    margin-top:3px;
-
-    font-size:28px;
-
+    font-size:27px;
     font-weight:900;
-
-    letter-spacing:-1px;
-
+    margin-top:3px;
 }
 
-.metric.success .metric-icon{
-
+.metric.green .metric-icon{
     color:var(--green);
-
     background:var(--greenbg);
-
 }
 
-.metric.warning .metric-icon{
-
+.metric.yellow .metric-icon{
     color:var(--yellow);
-
     background:var(--yellowbg);
-
 }
 
-.metric.danger .metric-icon{
-
+.metric.red .metric-icon{
     color:var(--red);
-
     background:var(--redbg);
-
 }
-
-
-/* =====================================================
-   RESULT
-====================================================== */
 
 .result{
-
     overflow:hidden;
-
 }
 
 .result-head{
-
-    padding:24px;
-
+    padding:22px;
     display:flex;
-
     justify-content:space-between;
-
     align-items:center;
-
-    gap:15px;
-
-    border-bottom:
-        1px solid var(--border);
-
+    gap:10px;
+    border-bottom:1px solid var(--border);
 }
 
 .actions{
-
     display:flex;
-
     gap:8px;
-
 }
 
 .table-wrap{
-
-    width:100%;
-
     overflow:auto;
-
 }
 
 table{
-
     width:100%;
-
-    min-width:1050px;
-
+    min-width:1250px;
     border-collapse:collapse;
-
 }
 
 th{
-
-    padding:13px 15px;
-
+    padding:13px 14px;
     text-align:left;
-
     background:#f9fafb;
-
     color:#667085;
-
     font-size:8px;
-
-    letter-spacing:.8px;
-
+    letter-spacing:.7px;
     white-space:nowrap;
-
 }
 
 td{
-
-    padding:14px 15px;
-
-    border-top:
-        1px solid #f0f2f5;
-
+    padding:13px 14px;
+    border-top:1px solid #f0f2f5;
     font-size:10px;
-
     white-space:nowrap;
-
 }
 
 .num{
-
-    font-family:
-        ui-monospace,
-        SFMono-Regular,
-        Menlo,
-        monospace;
-
-    font-weight:700;
-
+    font-family:Consolas,monospace;
+    font-weight:800;
 }
 
-.file-cell{
-
-    max-width:210px;
-
-    overflow:hidden;
-
-    text-overflow:ellipsis;
-
-}
-
-.badge-status{
-
+.status-badge{
     display:inline-flex;
-
     padding:5px 8px;
-
     border-radius:999px;
-
     font-size:8px;
-
     font-weight:900;
-
 }
 
 .confirmed{
-
     color:var(--green);
-
     background:var(--greenbg);
-
 }
 
 .check{
-
     color:var(--yellow);
-
     background:var(--yellowbg);
-
 }
 
 .review{
-
     color:var(--red);
-
     background:var(--redbg);
-
 }
 
-
-/* =====================================================
-   EVIDENCE
-====================================================== */
-
 .evidence-card{
-
-    margin-bottom:10px;
-
     overflow:hidden;
-
-    border:
-        1px solid var(--border);
-
+    border:1px solid var(--border);
     border-radius:15px;
-
     background:white;
-
+    margin-bottom:10px;
 }
 
 .evidence-head{
-
     width:100%;
-
-    padding:15px 17px;
-
+    padding:14px 16px;
     border:0;
-
-    display:flex;
-
-    align-items:center;
-
-    justify-content:space-between;
-
-    cursor:pointer;
-
-    text-align:left;
-
     background:white;
-
-}
-
-.evidence-head:hover{
-
-    background:#fafafa;
-
+    cursor:pointer;
+    text-align:left;
+    display:flex;
+    justify-content:space-between;
 }
 
 .evidence-title{
-
     font-size:11px;
-
     font-weight:850;
-
 }
 
 .evidence-meta{
-
-    margin-top:4px;
-
     color:var(--muted);
-
     font-size:9px;
-
+    margin-top:4px;
 }
 
 .evidence-body{
-
     display:none;
-
-    padding:
-        0 17px 17px;
-
+    padding:0 16px 16px;
 }
 
-.evidence-body.open{
+.evidence-body.open{display:block}
 
-    display:block;
+.ev-block{margin-top:12px}
 
-}
-
-.evidence-block{
-
-    margin-top:9px;
-
-}
-
-.evidence-label{
-
-    margin-bottom:5px;
-
+.ev-label{
     font-size:9px;
-
     font-weight:850;
-
+    margin-bottom:5px;
 }
 
-.evidence-text{
-
+.ev-text{
     padding:11px;
-
-    border:
-        1px solid #eaecf0;
-
+    border:1px solid #eaecf0;
     border-radius:9px;
-
     background:#f8fafc;
-
-    color:#344054;
-
-    font-family:
-        ui-monospace,
-        SFMono-Regular,
-        Menlo,
-        monospace;
-
+    font-family:Consolas,monospace;
     font-size:9px;
-
-    line-height:1.65;
-
-    white-space:pre-wrap;
-
-    overflow:auto;
-
-}
-
-.evidence-result{
-
-    margin-top:6px;
-
-    color:var(--muted);
-
-    font-size:9px;
-
-}
-
-
-/* =====================================================
-   EMPTY / ALERT
-====================================================== */
-
-.notice{
-
-    padding:16px;
-
-    border-radius:13px;
-
-    border:
-        1px solid var(--border);
-
-    background:#f8fafc;
-
-    color:var(--muted);
-
-    font-size:10px;
-
     line-height:1.6;
-
+    white-space:pre-wrap;
+    overflow:auto;
 }
 
-.notice.warning{
+.ev-result{
+    color:var(--muted);
+    font-size:9px;
+    margin-top:6px;
+}
 
-    color:#92400e;
-
+.warning{
+    padding:15px;
+    border-radius:12px;
     background:#fffbeb;
-
-    border-color:#fde68a;
-
+    border:1px solid #fde68a;
+    color:#92400e;
+    font-size:10px;
+    line-height:1.6;
 }
 
-
-/* =====================================================
-   FOOTER
-====================================================== */
+.hidden{display:none!important}
 
 footer{
-
-    margin-top:55px;
-
-    padding-top:23px;
-
-    display:flex;
-
-    justify-content:space-between;
-
-    border-top:
-        1px solid var(--border);
-
+    margin-top:45px;
+    padding-top:20px;
+    border-top:1px solid var(--border);
     color:#98a2b3;
-
     font-size:9px;
-
+    display:flex;
+    justify-content:space-between;
 }
-
-
-/* =====================================================
-   HIDDEN
-====================================================== */
-
-.hidden{
-
-    display:none !important;
-
-}
-
-
-/* =====================================================
-   MOBILE
-====================================================== */
 
 @media(max-width:800px){
-
-    .navbar{
-
-        padding:0 18px;
-
-    }
-
-    .live-status{
-
-        display:none;
-
-    }
-
-    .container{
-
-        width:
-            calc(100% - 20px);
-
-        padding-top:20px;
-
-    }
-
-    .hero{
-
-        padding:38px 25px;
-
-        border-radius:23px;
-
-    }
-
-    .hero h1{
-
-        font-size:43px;
-
-        letter-spacing:-2.3px;
-
-    }
-
-    .year-row{
-
-        flex-direction:column;
-
-    }
-
-    .metrics{
-
-        grid-template-columns:
-            repeat(2,1fr);
-
-    }
-
-    .result-head{
-
-        align-items:flex-start;
-
-        flex-direction:column;
-
-    }
-
-    .actions{
-
-        width:100%;
-
-    }
-
-    .actions button{
-
-        flex:1;
-
-    }
-
-    footer{
-
-        flex-direction:column;
-
-        gap:6px;
-
-    }
-
+    .navbar{padding:0 18px}
+    .live{display:none}
+    .container{width:calc(100% - 18px)}
+    .hero{padding:35px 23px}
+    .hero h1{font-size:42px}
+    .year-row{flex-direction:column}
+    .metrics{grid-template-columns:repeat(2,1fr)}
+    .result-head{align-items:flex-start;flex-direction:column}
+    footer{flex-direction:column;gap:7px}
 }
-
 </style>
-
 </head>
-
 
 <body>
 
-
-<div class="bg-grid"></div>
-
-<div class="orb one"></div>
-
-<div class="orb two"></div>
-
-
-<!-- =====================================================
-     NAVBAR
-====================================================== -->
-
 <nav class="navbar">
-
     <div class="brand">
-
-        <div class="brand-icon">
-            📊
-        </div>
-
+        <div class="brand-icon">📊</div>
         <div>
-
-            <div class="brand-name">
-                FinExtract
-            </div>
-
-            <div class="brand-sub">
-                Annual Report Financial Extractor
-            </div>
-
+            <div class="brand-name">FinExtract</div>
+            <div class="brand-sub">Consolidated Financial Statement Extractor</div>
         </div>
-
     </div>
 
-
-    <div class="live-status">
-
-        <span class="live-dot"></span>
-
+    <div class="live">
+        <span class="dot"></span>
         Browser Processing
-
     </div>
-
 </nav>
-
-
 
 <main class="container">
 
-
-<!-- =====================================================
-     HERO
-====================================================== -->
-
 <section class="hero">
-
-    <div class="badge">
-        ⚡ FINANCIAL DATA AUTOMATION
-    </div>
+    <div class="badge">FINANCIAL DATA AUTOMATION</div>
 
     <h1>
-
-        Dari PDF
-
-        <span>
-            Jadi Data Tabulasi.
-        </span>
-
+        PDF → Data
+        <span>Tanpa Tabulasi Manual.</span>
     </h1>
 
     <p>
-
-        Upload Annual Report dan FinExtract akan
-        mencari <strong>Laba Bersih</strong>,
+        FinExtract hanya memprioritaskan tiga angka:
+        <strong>Laba Bersih</strong>,
         <strong>Arus Kas dari Aktivitas Operasi</strong>,
-        dan <strong>Total Aset</strong> beserta
-        halaman sumber dan satuannya.
-
+        dan <strong>Total Aset</strong>.
+        Mesin ekstraksi difokuskan pada laporan keuangan
+        konsolidasian dan tidak asal mengambil angka dari catatan perusahaan.
     </p>
 
-
-    <div class="hero-features">
-
-        <div>
-            <span>✓</span>
-            Deteksi tahun
-        </div>
-
-        <div>
-            <span>✓</span>
-            Deteksi satuan
-        </div>
-
-        <div>
-            <span>✓</span>
-            Negatif accounting
-        </div>
-
-        <div>
-            <span>✓</span>
-            Evidence halaman
-        </div>
-
-        <div>
-            <span>✓</span>
-            CSV / XLSX
-        </div>
-
+    <div class="features">
+        <div><b>✓</b> Laporan Konsolidasian</div>
+        <div><b>✓</b> Mapping Kolom Tahun</div>
+        <div><b>✓</b> Deteksi Satuan</div>
+        <div><b>✓</b> Accounting Negative</div>
+        <div><b>✓</b> Evidence Halaman</div>
+        <div><b>✓</b> CSV / XLSX</div>
     </div>
-
 </section>
 
-
-
-<!-- =====================================================
-     UPLOAD
-====================================================== -->
 
 <section class="card upload-card">
+    <div id="dropZone" class="drop">
 
-    <div
-        id="dropZone"
-        class="drop-zone"
-    >
+        <div class="upload-icon">📄</div>
 
-        <div class="upload-icon">
-            📄
-        </div>
-
-        <h2>
-            Upload Annual Report
-        </h2>
+        <h2>Upload Annual Report</h2>
 
         <p>
-            Drag & drop PDF di sini atau pilih dari komputer
+            Upload satu atau banyak PDF sekaligus
         </p>
 
-
-        <label class="upload-button">
-
-            <input
-                id="pdfInput"
-                type="file"
-                accept=".pdf,application/pdf"
-                multiple
-                hidden
-            >
-
-            <span>
-                ＋ Pilih PDF
-            </span>
-
+        <label class="upload-btn">
+            <input id="pdfInput"
+                   type="file"
+                   accept=".pdf,application/pdf"
+                   multiple
+                   hidden>
+            ＋ Pilih PDF
         </label>
 
-
-        <div class="upload-note">
-
-            Bisa upload banyak Annual Report sekaligus
-
+        <div class="note">
+            Semua proses dilakukan di browser.
         </div>
-
     </div>
-
 </section>
 
-
-
-<!-- =====================================================
-     SETTINGS
-====================================================== -->
 
 <section class="card settings section">
 
-    <div class="section-header">
-
+    <div class="section-head">
         <div>
-
-            <div class="eyebrow">
-                PENGATURAN
-            </div>
-
-            <h2 class="section-title">
-                Tahun yang ingin dicari
-            </h2>
-
+            <div class="eyebrow">TARGET TAHUN</div>
+            <h2 class="title">Tahun yang ingin ditabulasi</h2>
         </div>
-
     </div>
-
 
     <div class="year-row">
 
@@ -1844,277 +727,128 @@ footer{
             id="yearsInput"
             class="year-input"
             value="2021,2022,2023,2024,2025"
-            placeholder="2021,2022,2023,2024,2025"
+            placeholder="Contoh: 2021,2022,2023,2024,2025"
         >
 
         <button
             id="extractButton"
             class="primary"
-            disabled
-        >
-            🔍 Ekstrak Data
+            disabled>
+            🔍 EKSTRAK
         </button>
 
     </div>
-
 
     <div class="targets">
 
         <div class="target">
-            <b>01</b>
-            Laba Bersih
+            <b>01</b> Laba Bersih
         </div>
 
         <div class="target">
-            <b>02</b>
-            Arus Kas Aktivitas Operasi
+            <b>02</b> Arus Kas Aktivitas Operasi
         </div>
 
         <div class="target">
-            <b>03</b>
-            Total Aset
+            <b>03</b> Total Aset
         </div>
 
     </div>
-
 </section>
 
 
+<section id="filesSection" class="section hidden">
 
-<!-- =====================================================
-     FILES
-====================================================== -->
-
-<section
-    id="filesSection"
-    class="section hidden"
->
-
-    <div class="section-header">
-
+    <div class="section-head">
         <div>
-
-            <div class="eyebrow">
-                FILE
-            </div>
-
-            <h2 class="section-title">
-                PDF yang dipilih
-            </h2>
-
+            <div class="eyebrow">DOKUMEN</div>
+            <h2 class="title">Annual Report</h2>
         </div>
 
-
-        <button
-            id="clearButton"
-            class="ghost"
-        >
+        <button id="clearButton" class="ghost">
             Hapus Semua
         </button>
-
     </div>
 
-
-    <div
-        id="fileList"
-        class="file-grid"
-    ></div>
+    <div id="fileList" class="file-grid"></div>
 
 </section>
 
 
-
-<!-- =====================================================
-     PROGRESS
-====================================================== -->
-
-<section
-    id="progressSection"
-    class="card progress hidden"
->
+<section id="progressSection" class="card progress hidden">
 
     <div class="progress-top">
 
         <div>
-
-            <div
-                id="progressTitle"
-                class="progress-title"
-            >
+            <div id="progressTitle" class="progress-title">
                 Mempersiapkan...
             </div>
 
-            <div
-                id="progressDetail"
-                class="progress-detail"
-            >
+            <div id="progressDetail" class="progress-detail">
                 -
             </div>
-
         </div>
 
-
-        <strong
-            id="progressPercent"
-        >
-            0%
-        </strong>
-
+        <strong id="progressPercent">0%</strong>
     </div>
 
-
-    <div class="progress-track">
-
-        <div
-            id="progressBar"
-            class="progress-bar"
-        ></div>
-
+    <div class="track">
+        <div id="progressBar" class="bar"></div>
     </div>
 
-
-    <div
-        id="progressStatus"
-        class="progress-status"
-    ></div>
+    <div id="progressStatus" class="status-text"></div>
 
 </section>
 
 
-
-<!-- =====================================================
-     RESULTS
-====================================================== -->
-
-<section
-    id="resultsSection"
-    class="section hidden"
->
-
-
-    <!-- METRICS -->
+<section id="resultsSection" class="section hidden">
 
     <div class="metrics">
 
-
         <div class="metric">
-
-            <div class="metric-icon">
-                📄
-            </div>
-
-            <div class="metric-label">
-                PDF
-            </div>
-
-            <div
-                id="metricPdf"
-                class="metric-value"
-            >
-                0
-            </div>
-
+            <div class="metric-icon">📄</div>
+            <div class="metric-label">PDF</div>
+            <div id="metricPdf" class="metric-value">0</div>
         </div>
 
-
-        <div class="metric success">
-
-            <div class="metric-icon">
-                ✓
-            </div>
-
-            <div class="metric-label">
-                CONFIRMED
-            </div>
-
-            <div
-                id="metricConfirmed"
-                class="metric-value"
-            >
-                0
-            </div>
-
+        <div class="metric green">
+            <div class="metric-icon">✓</div>
+            <div class="metric-label">CONFIRMED</div>
+            <div id="metricConfirmed" class="metric-value">0</div>
         </div>
 
-
-        <div class="metric warning">
-
-            <div class="metric-icon">
-                !
-            </div>
-
-            <div class="metric-label">
-                CHECK
-            </div>
-
-            <div
-                id="metricCheck"
-                class="metric-value"
-            >
-                0
-            </div>
-
+        <div class="metric yellow">
+            <div class="metric-icon">!</div>
+            <div class="metric-label">CHECK</div>
+            <div id="metricCheck" class="metric-value">0</div>
         </div>
 
-
-        <div class="metric danger">
-
-            <div class="metric-icon">
-                !
-            </div>
-
-            <div class="metric-label">
-                REVIEW
-            </div>
-
-            <div
-                id="metricReview"
-                class="metric-value"
-            >
-                0
-            </div>
-
+        <div class="metric red">
+            <div class="metric-icon">!</div>
+            <div class="metric-label">REVIEW</div>
+            <div id="metricReview" class="metric-value">0</div>
         </div>
 
     </div>
 
-
-
-    <!-- TABLE -->
 
     <div class="card result section">
 
         <div class="result-head">
 
             <div>
-
-                <div class="eyebrow">
-                    HASIL EKSTRAKSI
-                </div>
-
-                <h2 class="section-title">
-                    Data Keuangan
-                </h2>
-
+                <div class="eyebrow">HASIL</div>
+                <h2 class="title">Data Keuangan</h2>
             </div>
 
-
             <div class="actions">
-
-                <button
-                    id="csvButton"
-                    class="secondary"
-                >
+                <button id="csvButton" class="secondary">
                     ↓ CSV
                 </button>
 
-                <button
-                    id="xlsxButton"
-                    class="primary"
-                >
+                <button id="xlsxButton" class="primary">
                     ↓ XLSX
                 </button>
-
             </div>
 
         </div>
@@ -2125,53 +859,20 @@ footer{
             <table>
 
                 <thead>
-
                     <tr>
-
-                        <th>
-                            FILE
-                        </th>
-
-                        <th>
-                            PERUSAHAAN
-                        </th>
-
-                        <th>
-                            KODE
-                        </th>
-
-                        <th>
-                            TAHUN
-                        </th>
-
-                        <th>
-                            LABA BERSIH
-                        </th>
-
-                        <th>
-                            ARUS KAS OPERASI
-                        </th>
-
-                        <th>
-                            TOTAL ASET
-                        </th>
-
-                        <th>
-                            HALAMAN
-                        </th>
-
-                        <th>
-                            STATUS
-                        </th>
-
+                        <th>FILE</th>
+                        <th>PERUSAHAAN</th>
+                        <th>KODE</th>
+                        <th>TAHUN</th>
+                        <th>LABA BERSIH</th>
+                        <th>ARUS KAS OPERASI</th>
+                        <th>TOTAL ASET</th>
+                        <th>HALAMAN</th>
+                        <th>STATUS</th>
                     </tr>
-
                 </thead>
 
-
-                <tbody
-                    id="resultTable"
-                ></tbody>
+                <tbody id="resultTable"></tbody>
 
             </table>
 
@@ -2180,270 +881,189 @@ footer{
     </div>
 
 
-
-    <!-- EVIDENCE -->
-
     <div class="section">
 
-        <div class="section-header">
-
+        <div class="section-head">
             <div>
-
-                <div class="eyebrow">
-                    EVIDENCE
-                </div>
-
-                <h2 class="section-title">
-                    Bukti Sumber
-                </h2>
-
+                <div class="eyebrow">BUKTI</div>
+                <h2 class="title">Evidence Sumber</h2>
             </div>
-
         </div>
 
-
-        <div
-            id="evidenceContainer"
-        ></div>
+        <div id="evidenceContainer"></div>
 
     </div>
-
 
 </section>
 
 
-
 <footer>
-
-    <div>
-        FinExtract
-    </div>
-
-    <div>
-        Evidence-first financial extraction • GitHub Pages
-    </div>
-
+    <span>FinExtract</span>
+    <span>Evidence-first consolidated financial extraction</span>
 </footer>
-
 
 </main>
 
 
-
-<!-- =====================================================
-     JAVASCRIPT
-====================================================== -->
-
 <script>
 
-
-/* =====================================================
+/* =========================================================
    PDF.JS
-====================================================== */
+========================================================= */
 
-if(window.pdfjsLib){
-
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-
-}
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 
-/* =====================================================
+/* =========================================================
    STATE
-====================================================== */
+========================================================= */
 
 let files = [];
-
 let results = [];
+let evidences = [];
 
-let evidence = [];
 
-
-/* =====================================================
+/* =========================================================
    DOM
-====================================================== */
+========================================================= */
 
 const pdfInput =
-    document.getElementById(
-        "pdfInput"
-    );
+document.getElementById("pdfInput");
 
 const dropZone =
-    document.getElementById(
-        "dropZone"
-    );
+document.getElementById("dropZone");
 
 const extractButton =
-    document.getElementById(
-        "extractButton"
-    );
+document.getElementById("extractButton");
 
 const filesSection =
-    document.getElementById(
-        "filesSection"
-    );
+document.getElementById("filesSection");
 
 const fileList =
-    document.getElementById(
-        "fileList"
-    );
+document.getElementById("fileList");
 
 const clearButton =
-    document.getElementById(
-        "clearButton"
-    );
+document.getElementById("clearButton");
 
 const yearsInput =
-    document.getElementById(
-        "yearsInput"
-    );
+document.getElementById("yearsInput");
 
 const progressSection =
-    document.getElementById(
-        "progressSection"
-    );
+document.getElementById("progressSection");
 
 const progressBar =
-    document.getElementById(
-        "progressBar"
-    );
+document.getElementById("progressBar");
 
 const progressPercent =
-    document.getElementById(
-        "progressPercent"
-    );
+document.getElementById("progressPercent");
 
 const progressTitle =
-    document.getElementById(
-        "progressTitle"
-    );
+document.getElementById("progressTitle");
 
 const progressDetail =
-    document.getElementById(
-        "progressDetail"
-    );
+document.getElementById("progressDetail");
 
 const progressStatus =
-    document.getElementById(
-        "progressStatus"
-    );
+document.getElementById("progressStatus");
 
 const resultsSection =
-    document.getElementById(
-        "resultsSection"
-    );
+document.getElementById("resultsSection");
 
 const resultTable =
-    document.getElementById(
-        "resultTable"
-    );
+document.getElementById("resultTable");
 
 const evidenceContainer =
-    document.getElementById(
-        "evidenceContainer"
-    );
+document.getElementById("evidenceContainer");
 
 const metricPdf =
-    document.getElementById(
-        "metricPdf"
-    );
+document.getElementById("metricPdf");
 
 const metricConfirmed =
-    document.getElementById(
-        "metricConfirmed"
-    );
+document.getElementById("metricConfirmed");
 
 const metricCheck =
-    document.getElementById(
-        "metricCheck"
-    );
+document.getElementById("metricCheck");
 
 const metricReview =
-    document.getElementById(
-        "metricReview"
-    );
+document.getElementById("metricReview");
 
 const csvButton =
-    document.getElementById(
-        "csvButton"
-    );
+document.getElementById("csvButton");
 
 const xlsxButton =
-    document.getElementById(
-        "xlsxButton"
-    );
+document.getElementById("xlsxButton");
 
 
-/* =====================================================
-   TARGETS
-====================================================== */
+/* =========================================================
+   TARGET DEFINITIONS
+========================================================= */
 
 const TARGETS = {
 
-    laba:{
+    laba: {
 
-        label:"Laba Bersih",
+        name:"Laba Bersih",
+
+        statement:"income",
 
         patterns:[
-
             /laba\s+neto\s+tahun\s+berjalan/i,
-
             /laba\s+bersih\s+tahun\s+berjalan/i,
-
             /net\s+income\s+for\s+the\s+year/i,
+            /profit\s+for\s+the\s+year/i
+        ],
 
-            /profit\s+for\s+the\s+year/i,
-
-            /net\s+profit\s+for\s+the\s+year/i,
-
+        weaker:[
             /laba\s+neto/i,
-
-            /laba\s+bersih/i
-
+            /laba\s+bersih/i,
+            /net\s+income/i,
+            /net\s+profit/i
         ]
 
     },
 
 
-    cashflow:{
+    cashflow: {
 
-        label:
-            "Arus Kas Aktivitas Operasi",
+        name:"Arus Kas Aktivitas Operasi",
+
+        statement:"cashflow",
 
         patterns:[
-
+            /arus\s+kas\s+bersih\s+dari\s+aktivitas\s+operasi/i,
+            /arus\s+kas\s+neto\s+dari\s+aktivitas\s+operasi/i,
+            /arus\s+kas\s+diperoleh\s+dari\s+aktivitas\s+operasi/i,
+            /arus\s+kas\s+digunakan\s+untuk\s+aktivitas\s+operasi/i,
             /arus\s+kas.*aktivitas\s+operasi/i,
-
-            /arus\s+kas\s+diperoleh.*aktivitas\s+operasi/i,
-
-            /arus\s+kas\s+digunakan.*aktivitas\s+operasi/i,
-
-            /kas\s+neto\s+diperoleh.*aktivitas\s+operasi/i,
-
-            /cash\s+flow.*operating\s+activities/i,
-
+            /net\s+cash\s+flows?.*operating\s+activities/i,
             /cash\s+flows?.*operating\s+activities/i,
+            /net\s+cash.*operating\s+activities/i
+        ],
 
+        weaker:[
+            /aktivitas\s+operasi/i,
             /operating\s+activities/i
-
         ]
 
     },
 
 
-    assets:{
+    assets: {
 
-        label:"Total Aset",
+        name:"Total Aset",
+
+        statement:"balance",
 
         patterns:[
-
             /jumlah\s+aset/i,
-
             /total\s+aset/i,
-
             /total\s+assets/i
+        ],
 
+        weaker:[
+            /aset/i,
+            /assets/i
         ]
 
     }
@@ -2451,302 +1071,223 @@ const TARGETS = {
 };
 
 
-/* =====================================================
-   UNIT
-====================================================== */
+/* =========================================================
+   STATEMENT PAGE IDENTIFICATION
+========================================================= */
 
-const UNIT_MULTIPLIER = {
+const STATEMENT_MARKERS = {
 
-    rupiah:1000000000000000000n / 1000000000000000000n,
+    income:[
+        /laporan\s+laba\s+rugi/i,
+        /laporan\s+laba\s+rugi\s+dan\s+penghasilan/i,
+        /statement\s+of\s+profit\s+or\s+loss/i,
+        /statement\s+of\s+profit\s+or\s+loss\s+and\s+other\s+comprehensive/i
+    ],
+
+    cashflow:[
+        /laporan\s+arus\s+kas/i,
+        /statement\s+of\s+cash\s+flows?/i
+    ],
+
+    balance:[
+        /laporan\s+posisi\s+keuangan/i,
+        /statement\s+of\s+financial\s+position/i,
+        /neraca/i,
+        /balance\s+sheet/i
+    ]
+
+};
+
+
+/* =========================================================
+   UNIT MULTIPLIERS
+========================================================= */
+
+const UNIT_MULTIPLIERS = {
+
+    rupiah:1n,
 
     ribu:1000n,
-
     thousand:1000n,
 
     juta:1000000n,
-
     million:1000000n,
 
     miliar:1000000000n,
-
     milyar:1000000000n,
-
     billion:1000000000n,
 
     triliun:1000000000000n,
-
     trillion:1000000000000n
 
 };
 
 
-/* =====================================================
+/* =========================================================
    FILE INPUT
-====================================================== */
+========================================================= */
 
-pdfInput.addEventListener(
-    "change",
-    function(){
+pdfInput.addEventListener("change",function(){
 
-        addFiles(
-            Array.from(
-                this.files
-            )
+    addFiles(
+        Array.from(this.files)
+    );
+
+    this.value="";
+
+});
+
+
+dropZone.addEventListener("dragover",function(e){
+
+    e.preventDefault();
+
+    dropZone.classList.add("drag");
+
+});
+
+
+dropZone.addEventListener("dragleave",function(){
+
+    dropZone.classList.remove("drag");
+
+});
+
+
+dropZone.addEventListener("drop",function(e){
+
+    e.preventDefault();
+
+    dropZone.classList.remove("drag");
+
+    const dropped =
+        Array.from(e.dataTransfer.files)
+        .filter(file =>
+            file.type==="application/pdf"
+            ||
+            file.name.toLowerCase().endsWith(".pdf")
         );
 
-        this.value = "";
+    addFiles(dropped);
 
-    }
-);
-
-
-/* =====================================================
-   DRAG
-====================================================== */
-
-dropZone.addEventListener(
-    "dragover",
-    function(event){
-
-        event.preventDefault();
-
-        dropZone.classList.add(
-            "dragging"
-        );
-
-    }
-);
+});
 
 
-dropZone.addEventListener(
-    "dragleave",
-    function(){
-
-        dropZone.classList.remove(
-            "dragging"
-        );
-
-    }
-);
-
-
-dropZone.addEventListener(
-    "drop",
-    function(event){
-
-        event.preventDefault();
-
-        dropZone.classList.remove(
-            "dragging"
-        );
-
-
-        const dropped =
-            Array.from(
-                event.dataTransfer.files
-            )
-            .filter(
-                file =>
-                    file.type ===
-                    "application/pdf"
-                    ||
-                    file.name
-                        .toLowerCase()
-                        .endsWith(".pdf")
-            );
-
-
-        addFiles(
-            dropped
-        );
-
-    }
-);
-
-
-/* =====================================================
+/* =========================================================
    ADD FILES
-====================================================== */
+========================================================= */
 
-function addFiles(
-    newFiles
-){
+function addFiles(newFiles){
 
-    for(
-        const file
-        of newFiles
-    ){
+    for(const file of newFiles){
 
         if(
             !files.some(
-                existing =>
-                    existing.name ===
-                    file.name
+                old =>
+                    old.name===file.name
                     &&
-                    existing.size ===
-                    file.size
+                    old.size===file.size
             )
         ){
 
-            files.push(
-                file
-            );
+            files.push(file);
 
         }
 
     }
-
 
     renderFiles();
 
 }
 
 
-/* =====================================================
+/* =========================================================
    RENDER FILES
-====================================================== */
+========================================================= */
 
 function renderFiles(){
 
-    if(
-        files.length === 0
-    ){
+    if(!files.length){
 
-        filesSection.classList.add(
-            "hidden"
-        );
-
-        extractButton.disabled =
-            true;
-
+        filesSection.classList.add("hidden");
+        extractButton.disabled=true;
         return;
 
     }
 
+    filesSection.classList.remove("hidden");
+    extractButton.disabled=false;
 
-    filesSection.classList.remove(
-        "hidden"
-    );
+    fileList.innerHTML="";
 
-    extractButton.disabled =
-        false;
+    files.forEach((file,index)=>{
 
+        const div =
+        document.createElement("div");
 
-    fileList.innerHTML = "";
+        div.className="file";
 
+        div.innerHTML=`
 
-    files.forEach(
-        (
-            file,
-            index
-        ) => {
+            <div class="file-icon">
+                📕
+            </div>
 
-            const item =
-                document.createElement(
-                    "div"
-                );
+            <div class="file-info">
 
-            item.className =
-                "file-item";
-
-
-            item.innerHTML = `
-
-                <div class="file-icon">
-                    📕
+                <div class="file-name"
+                     title="${esc(file.name)}">
+                    ${esc(file.name)}
                 </div>
 
-                <div class="file-info">
-
-                    <div
-                        class="file-name"
-                        title="${escapeHTML(
-                            file.name
-                        )}"
-                    >
-                        ${escapeHTML(
-                            file.name
-                        )}
-                    </div>
-
-                    <div class="file-size">
-
-                        ${formatBytes(
-                            file.size
-                        )}
-
-                    </div>
-
+                <div class="file-size">
+                    ${formatBytes(file.size)}
                 </div>
 
+            </div>
 
-                <button
-                    class="ghost"
-                    style="padding:6px 9px"
-                    data-remove="${index}"
-                >
-                    ×
-                </button>
+            <button class="ghost"
+                    data-index="${index}">
+                ×
+            </button>
+        `;
 
-            `;
+        div.querySelector("button")
+        .addEventListener("click",()=>{
 
+            files.splice(index,1);
 
-            item
-                .querySelector(
-                    "[data-remove]"
-                )
-                .addEventListener(
-                    "click",
-                    function(){
+            renderFiles();
 
-                        files.splice(
-                            index,
-                            1
-                        );
+        });
 
-                        renderFiles();
+        fileList.appendChild(div);
 
-                    }
-                );
-
-
-            fileList.appendChild(
-                item
-            );
-
-        }
-    );
+    });
 
 }
 
 
-/* =====================================================
+/* =========================================================
    CLEAR
-====================================================== */
+========================================================= */
 
-clearButton.addEventListener(
-    "click",
-    function(){
+clearButton.addEventListener("click",function(){
 
-        files = [];
+    files=[];
+    results=[];
+    evidences=[];
 
-        results = [];
+    renderFiles();
 
-        evidence = [];
+    resultsSection.classList.add("hidden");
 
-        renderFiles();
-
-        resultsSection.classList.add(
-            "hidden"
-        );
-
-    }
-);
+});
 
 
-/* =====================================================
-   EXTRACT
-====================================================== */
+/* =========================================================
+   START
+========================================================= */
 
 extractButton.addEventListener(
     "click",
@@ -2754,131 +1295,103 @@ extractButton.addEventListener(
 );
 
 
-/* =====================================================
-   START
-====================================================== */
-
 async function startExtraction(){
 
-    const years =
+    const requestedYears =
         parseYears(
             yearsInput.value
         );
 
-
-    if(
-        files.length === 0
-    ){
+    if(!requestedYears.length){
 
         alert(
-            "Upload PDF terlebih dahulu."
+            "Masukkan tahun seperti 2021,2022,2023,2024,2025."
         );
 
         return;
 
     }
 
-
-    if(
-        years.length === 0
-    ){
+    if(!files.length){
 
         alert(
-            "Masukkan tahun seperti 2021,2022,2023"
+            "Upload Annual Report terlebih dahulu."
         );
 
         return;
 
     }
 
+    results=[];
+    evidences=[];
 
-    results = [];
+    resultsSection.classList.add("hidden");
 
-    evidence = [];
+    progressSection.classList.remove("hidden");
 
-
-    resultsSection.classList.add(
-        "hidden"
-    );
-
-    progressSection.classList.remove(
-        "hidden"
-    );
-
-
-    extractButton.disabled =
-        true;
-
+    extractButton.disabled=true;
 
     try{
 
         for(
-            let i = 0;
-            i < files.length;
+            let i=0;
+            i<files.length;
             i++
         ){
 
-            const file =
-                files[i];
-
+            const file=files[i];
 
             setProgress(
-                (
-                    i /
-                    files.length
-                ) * 100,
-                "Membaca Annual Report...",
-                `${file.name} • file ${i+1}/${files.length}`
+                (i/files.length)*100,
+                "Memproses Annual Report",
+                `${file.name} • ${i+1}/${files.length}`
             );
-
 
             const output =
                 await processPDF(
                     file,
-                    years
+                    requestedYears
                 );
-
 
             results.push(
                 ...output.rows
             );
 
-
-            evidence.push(
+            evidences.push(
                 ...output.evidence
             );
 
         }
 
+        /*
+           Hilangkan duplikat hasil.
+        */
+
+        results =
+        deduplicateResults(results);
+
+        evidences =
+        deduplicateEvidence(evidences);
 
         renderResults();
-
         renderEvidence();
-
         updateMetrics();
 
-
-        resultsSection.classList.remove(
-            "hidden"
-        );
-
+        resultsSection.classList.remove("hidden");
 
         setProgress(
             100,
-            "Selesai!",
-            "Semua file berhasil diproses."
+            "Selesai",
+            "Ekstraksi selesai. Periksa status CHECK/REVIEW sebelum tabulasi."
         );
-
 
     }
     catch(error){
 
-        console.error(
-            error
-        );
+        console.error(error);
 
         alert(
-            "Terjadi kesalahan: "
+            "Gagal memproses PDF: "
             +
             error.message
         );
@@ -2886,158 +1399,131 @@ async function startExtraction(){
     }
     finally{
 
-        extractButton.disabled =
-            false;
+        extractButton.disabled=false;
 
     }
 
 }
 
 
-/* =====================================================
+/* =========================================================
    PROCESS PDF
-====================================================== */
+========================================================= */
 
 async function processPDF(
     file,
-    years
+    requestedYears
 ){
 
     const buffer =
         await file.arrayBuffer();
 
-
     const pdf =
         await pdfjsLib
-            .getDocument({
-                data:buffer
-            })
-            .promise;
+        .getDocument({
+            data:buffer
+        })
+        .promise;
 
+    const pages=[];
 
-    const pages = [];
-
-
-    let totalText =
-        "";
+    let totalChars=0;
 
 
     /*
-       ================================================
-       STEP 1
-       BACA TEXT PDF
-       ================================================
+       -----------------------------------------------------
+       READ PDF TEXT
+       -----------------------------------------------------
     */
 
     for(
-        let pageNo = 1;
-        pageNo <= pdf.numPages;
-        pageNo++
+        let pageNumber=1;
+        pageNumber<=pdf.numPages;
+        pageNumber++
     ){
 
         const page =
             await pdf.getPage(
-                pageNo
+                pageNumber
             );
-
 
         const content =
             await page.getTextContent();
 
-
-        /*
-           Preserve posisi text.
-
-           Ini penting karena tabel Annual Report
-           sering mempunyai kolom tahun horizontal.
-        */
-
         const items =
-            content.items.map(
-                item => ({
+            content.items.map(item=>({
 
-                    text:
-                        item.str || "",
+                text:item.str || "",
 
-                    x:
-                        item.transform
-                            ? item.transform[4]
-                            : 0,
+                x:
+                    item.transform
+                    ? item.transform[4]
+                    : 0,
 
-                    y:
-                        item.transform
-                            ? item.transform[5]
-                            : 0
+                y:
+                    item.transform
+                    ? item.transform[5]
+                    : 0,
 
-                })
-            );
+                width:
+                    item.width || 0
 
+            }));
+
+        const lines =
+            buildLines(items);
 
         const text =
-            rebuildPDFText(
-                items
-            );
+            lines
+            .map(x=>x.text)
+            .join("\n");
 
+        totalChars += text.length;
 
         pages.push({
 
-            number:
-                pageNo,
+            pageNumber,
 
-            text,
+            page,
 
             items,
 
-            pdfPage:
-                page
+            lines,
+
+            text
 
         });
 
-
-        totalText +=
-            "\n"
-            +
-            text;
-
-
         setProgress(
             (
-                pageNo /
+                pageNumber /
                 pdf.numPages
-            ) * 45,
-            "Membaca halaman PDF...",
-            `${file.name} • halaman ${pageNo}/${pdf.numPages}`
+            )*45,
+            "Membaca PDF",
+            `${file.name} • halaman ${pageNumber}/${pdf.numPages}`
         );
 
     }
 
 
     /*
-       ================================================
-       STEP 2
-       OCR FALLBACK
-       ================================================
+       -----------------------------------------------------
+       OCR ONLY IF PDF IS REALLY SCAN
+       -----------------------------------------------------
     */
 
-    const averageText =
-        totalText.length /
-        Math.max(
-            1,
-            pages.length
-        );
-
-
     if(
-        averageText < 80
+        totalChars /
+        Math.max(1,pages.length)
+        < 50
     ){
 
         progressStatus.textContent =
-            "🔎 PDF terdeteksi sebagai scan. OCR sedang dicoba...";
-
+        "PDF kemungkinan scan. Mencoba OCR...";
 
         for(
-            let i = 0;
-            i < pages.length;
+            let i=0;
+            i<pages.length;
             i++
         ){
 
@@ -3045,9 +1531,8 @@ async function processPDF(
 
                 const ocr =
                     await runOCR(
-                        pages[i].pdfPage
+                        pages[i].page
                     );
-
 
                 if(
                     ocr.length >
@@ -3055,7 +1540,12 @@ async function processPDF(
                 ){
 
                     pages[i].text =
-                        normalize(
+                        normalizeText(
+                            ocr
+                        );
+
+                    pages[i].lines =
+                        makeOCRLines(
                             ocr
                         );
 
@@ -3071,43 +1561,31 @@ async function processPDF(
 
             }
 
-
             setProgress(
-                45 +
+                45+
                 (
                     (i+1) /
                     pages.length
-                ) * 35,
-                "OCR scan PDF...",
+                )*15,
+                "OCR PDF Scan",
                 `${file.name} • halaman ${i+1}/${pages.length}`
             );
 
         }
 
     }
-    else{
-
-        progressStatus.textContent =
-            "✓ PDF text berhasil dibaca.";
-
-    }
 
 
     /*
-       ================================================
-       STEP 3
-       COMPANY
-       ================================================
+       -----------------------------------------------------
+       IDENTIFY COMPANY
+       -----------------------------------------------------
     */
 
     const fullText =
         pages
-            .map(
-                page =>
-                    page.text
-            )
-            .join("\n");
-
+        .map(p=>p.text)
+        .join("\n");
 
     const company =
         detectCompany(
@@ -3115,85 +1593,149 @@ async function processPDF(
             file.name
         );
 
-
     const code =
-        detectCode(
+        detectStockCode(
             fullText
         );
 
 
     /*
-       ================================================
-       STEP 4
-       CANDIDATES
-       ================================================
+       -----------------------------------------------------
+       IMPORTANT:
+       ONLY SEARCH STATEMENT PAGES
+       -----------------------------------------------------
     */
 
-    const candidates = [];
+    const statementPages=[];
 
+    for(const page of pages){
 
-    for(
-        const page
-        of pages
-    ){
-
-        const pageCandidates =
-            findCandidates(
-                page.text,
-                page.number
+        const type =
+            detectStatementType(
+                page.text
             );
 
+        if(type){
 
-        candidates.push(
-            ...pageCandidates
-        );
+            statementPages.push({
+
+                ...page,
+
+                statementType:type
+
+            });
+
+        }
 
     }
 
 
     /*
-       ================================================
-       STEP 5
-       RESULT PER TAHUN
-       ================================================
+       -----------------------------------------------------
+       FIND THREE TARGETS
+       -----------------------------------------------------
     */
 
-    const rows = [];
+    const candidates=[];
+
+    for(const page of statementPages){
+
+        const unit =
+            detectUnit(
+                page.text
+            );
+
+        const years =
+            detectHeaderYears(
+                page
+            );
+
+        for(
+            const [
+                key,
+                target
+            ]
+            of Object.entries(TARGETS)
+        ){
+
+            if(
+                target.statement
+                !==
+                page.statementType
+            ){
+
+                continue;
+
+            }
+
+            const targetCandidates =
+                findTargetCandidates(
+                    page,
+                    key,
+                    unit,
+                    years
+                );
+
+            candidates.push(
+                ...targetCandidates
+            );
+
+        }
+
+    }
+
+
+    /*
+       -----------------------------------------------------
+       BUILD YEAR RESULTS
+       -----------------------------------------------------
+    */
+
+    const rows=[];
+
+    const targetYears =
+        requestedYears;
 
 
     for(
         const year
-        of years
+        of targetYears
     ){
 
-        const laba =
-            chooseCandidate(
-                candidates,
-                "laba",
-                year
-            );
+        const selected={};
+
+        for(
+            const key
+            of Object.keys(TARGETS)
+        ){
+
+            selected[key] =
+                chooseBest(
+                    candidates,
+                    key,
+                    year
+                );
+
+        }
 
 
-        const cash =
-            chooseCandidate(
-                candidates,
-                "cashflow",
-                year
-            );
+        /*
+           Jangan bikin angka dari halaman lain.
+        */
+
+        const foundLaba =
+            selected.laba;
+
+        const foundCash =
+            selected.cashflow;
+
+        const foundAssets =
+            selected.assets;
 
 
-        const assets =
-            chooseCandidate(
-                candidates,
-                "assets",
-                year
-            );
+        const row={
 
-
-        const row = {
-
-            file:
-                file.name,
+            file:file.name,
 
             company,
 
@@ -3202,46 +1744,36 @@ async function processPDF(
             year,
 
             laba:
-                laba
-                    ? convertToRupiah(
-                        laba.value,
-                        laba.unit
-                    )
-                    : null,
+                foundLaba
+                ? foundLaba.rupiah
+                : null,
 
             cashflow:
-                cash
-                    ? convertToRupiah(
-                        cash.value,
-                        cash.unit
-                    )
-                    : null,
+                foundCash
+                ? foundCash.rupiah
+                : null,
 
             assets:
-                assets
-                    ? convertToRupiah(
-                        assets.value,
-                        assets.unit
-                    )
-                    : null,
+                foundAssets
+                ? foundAssets.rupiah
+                : null,
 
             labaPage:
-                laba
-                    ? laba.page
-                    : null,
+                foundLaba
+                ? foundLaba.page
+                : null,
 
             cashPage:
-                cash
-                    ? cash.page
-                    : null,
+                foundCash
+                ? foundCash.page
+                : null,
 
             assetsPage:
-                assets
-                    ? assets.page
-                    : null,
+                foundAssets
+                ? foundAssets.page
+                : null,
 
-            status:
-                "REVIEW",
+            status:"REVIEW",
 
             notes:[]
 
@@ -3249,174 +1781,134 @@ async function processPDF(
 
 
         /*
-           ============================================
-           VALIDASI
-           ============================================
+           --------------------------------------------------
+           STATUS
+           --------------------------------------------------
         */
 
-        if(!laba){
-
-            row.notes.push(
-                "Laba Bersih tidak ditemukan."
-            );
-
-        }
-
-        if(!cash){
-
-            row.notes.push(
-                "Arus Kas Aktivitas Operasi tidak ditemukan."
-            );
-
-        }
-
-        if(!assets){
-
-            row.notes.push(
-                "Total Aset tidak ditemukan."
-            );
-
-        }
+        const allThree =
+            !!foundLaba
+            &&
+            !!foundCash
+            &&
+            !!foundAssets;
 
 
-        const allFound =
-            laba &&
-            cash &&
-            assets;
+        const allStrong =
+            allThree
+            &&
+            foundLaba.score>=90
+            &&
+            foundCash.score>=90
+            &&
+            foundAssets.score>=90;
 
 
-        const ambiguous =
-            (
-                laba &&
-                laba.ambiguous
-            )
-            ||
-            (
-                cash &&
-                cash.ambiguous
-            )
-            ||
-            (
-                assets &&
-                assets.ambiguous
-            );
-
-
-        const weak =
-            (
-                laba &&
-                laba.score < 90
-            )
-            ||
-            (
-                cash &&
-                cash.score < 90
-            )
-            ||
-            (
-                assets &&
-                assets.score < 90
-            );
+        const noAmbiguous =
+            allThree
+            &&
+            !foundLaba.ambiguous
+            &&
+            !foundCash.ambiguous
+            &&
+            !foundAssets.ambiguous;
 
 
         if(
-            allFound &&
-            !ambiguous &&
-            !weak
+            allStrong
+            &&
+            noAmbiguous
         ){
 
-            row.status =
-                "CONFIRMED";
+            row.status="CONFIRMED";
 
         }
         else if(
-            allFound
+            allThree
         ){
 
-            row.status =
-                "CHECK";
+            row.status="CHECK";
+
+            row.notes.push(
+                "Ketiga angka ditemukan tetapi ada bagian yang perlu diverifikasi."
+            );
 
         }
         else{
 
-            row.status =
-                "REVIEW";
+            row.status="REVIEW";
+
+            if(!foundLaba)
+                row.notes.push(
+                    "Laba Bersih tidak ditemukan secara terverifikasi."
+                );
+
+            if(!foundCash)
+                row.notes.push(
+                    "Arus Kas Aktivitas Operasi tidak ditemukan secara terverifikasi."
+                );
+
+            if(!foundAssets)
+                row.notes.push(
+                    "Total Aset tidak ditemukan secara terverifikasi."
+                );
 
         }
-
-
-        if(
-            ambiguous
-        ){
-
-            row.notes.push(
-                "Ada kandidat angka lain yang mirip; perlu verifikasi."
-            );
-
-        }
-
-
-        if(
-            weak
-        ){
-
-            row.notes.push(
-                "Bukti teks tidak cukup kuat; perlu verifikasi."
-            );
-
-        }
-
-
-        rows.push(
-            row
-        );
 
 
         /*
-           ============================================
-           EVIDENCE
-           ============================================
+           Hanya tambahkan tahun kalau
+           setidaknya ada satu data yang benar-benar
+           ditemukan pada statement page.
         */
 
-        const selected = [
-
-            {
-                target:laba,
-                label:"Laba Bersih"
-            },
-
-            {
-                target:cash,
-                label:
-                    "Arus Kas Aktivitas Operasi"
-            },
-
-            {
-                target:assets,
-                label:"Total Aset"
-            }
-
-        ];
-
-
-        for(
-            const item
-            of selected
+        if(
+            foundLaba
+            ||
+            foundCash
+            ||
+            foundAssets
         ){
 
-            if(
-                !item.target
-            ){
+            rows.push(row);
 
+        }
+
+    }
+
+
+    /*
+       -----------------------------------------------------
+       EVIDENCE
+       -----------------------------------------------------
+    */
+
+    const outputEvidence=[];
+
+    for(
+        const key
+        of Object.keys(TARGETS)
+    ){
+
+        for(
+            const year
+            of requestedYears
+        ){
+
+            const chosen =
+                chooseBest(
+                    candidates,
+                    key,
+                    year
+                );
+
+            if(!chosen)
                 continue;
 
-            }
 
+            outputEvidence.push({
 
-            evidence.push({
-
-                file:
-                    file.name,
+                file:file.name,
 
                 company,
 
@@ -3424,30 +1916,28 @@ async function processPDF(
 
                 year,
 
-                label:
-                    item.label,
+                target:
+                    TARGETS[key].name,
 
-                page:
-                    item.target.page,
+                page:chosen.page,
+
+                statement:
+                    chosen.statementType,
 
                 unit:
-                    item.target.unit ||
-                    "rupiah",
+                    chosen.unitName,
 
                 raw:
-                    item.target.rawToken,
+                    chosen.raw,
 
-                converted:
-                    convertToRupiah(
-                        item.target.value,
-                        item.target.unit
-                    ),
+                rupiah:
+                    chosen.rupiah,
 
                 score:
-                    item.target.score,
+                    chosen.score,
 
-                text:
-                    item.target.evidence
+                evidence:
+                    chosen.evidence
 
             });
 
@@ -3460,172 +1950,150 @@ async function processPDF(
 
         rows,
 
-        evidence:[]
+        evidence:
+            outputEvidence
 
     };
 
 }
 
 
-/* =====================================================
-   OCR
-====================================================== */
+/* =========================================================
+   STATEMENT TYPE
+========================================================= */
 
-async function runOCR(
-    page
-){
+function detectStatementType(text){
 
-    if(
-        !window.Tesseract
-    ){
-
-        throw new Error(
-            "Tesseract tidak tersedia."
+    const normalized =
+        normalizeText(
+            text
         );
+
+
+    /*
+       PRIORITAS:
+       halaman laporan konsolidasian
+       yang punya judul statement.
+    */
+
+    const income =
+        STATEMENT_MARKERS.income
+        .some(
+            r=>r.test(normalized)
+        );
+
+    if(income){
+
+        /*
+           Hindari halaman yang hanya
+           menyebut "laporan laba rugi"
+           dalam daftar isi.
+        */
+
+        if(
+            /untuk\s+tahun\s+yang\s+berakhir/i.test(normalized)
+            ||
+            /for\s+the\s+year\s+ended/i.test(normalized)
+        ){
+
+            return "income";
+
+        }
 
     }
 
 
-    const viewport =
-        page.getViewport({
-            scale:1.7
-        });
-
-
-    const canvas =
-        document.createElement(
-            "canvas"
+    const cash =
+        STATEMENT_MARKERS.cashflow
+        .some(
+            r=>r.test(normalized)
         );
 
+    if(cash){
 
-    canvas.width =
-        Math.ceil(
-            viewport.width
+        if(
+            /untuk\s+tahun\s+yang\s+berakhir/i.test(normalized)
+            ||
+            /for\s+the\s+year\s+ended/i.test(normalized)
+        ){
+
+            return "cashflow";
+
+        }
+
+    }
+
+
+    const balance =
+        STATEMENT_MARKERS.balance
+        .some(
+            r=>r.test(normalized)
         );
 
-    canvas.height =
-        Math.ceil(
-            viewport.height
-        );
+    if(balance){
+
+        if(
+            /31\s+desember/i.test(normalized)
+            ||
+            /as\s+of\s+december/i.test(normalized)
+            ||
+            /posisi\s+keuangan/i.test(normalized)
+            ||
+            /financial\s+position/i.test(normalized)
+        ){
+
+            return "balance";
+
+        }
+
+    }
 
 
-    const context =
-        canvas.getContext(
-            "2d"
-        );
-
-
-    await page.render({
-
-        canvasContext:
-            context,
-
-        viewport
-
-    }).promise;
-
-
-    const result =
-        await Tesseract.recognize(
-            canvas,
-            "eng",
-            {
-
-                logger:
-                    message => {
-
-                        if(
-                            message.status
-                        ){
-
-                            progressStatus.textContent =
-                                "OCR: "
-                                +
-                                message.status;
-
-                        }
-
-                    }
-
-            }
-        );
-
-
-    return (
-        result.data.text
-        ||
-        ""
-    );
+    return null;
 
 }
 
 
-/* =====================================================
-   REBUILD PDF TEXT
-====================================================== */
+/* =========================================================
+   BUILD PDF LINES USING X/Y POSITION
+========================================================= */
 
-function rebuildPDFText(
-    items
-){
+function buildLines(items){
 
-    if(
-        !items.length
-    ){
-
-        return "";
-
-    }
-
-
-    /*
-       Kelompokkan berdasarkan posisi Y.
-
-       PDF biasanya menyimpan:
-       label + angka sebagai object terpisah.
-    */
-
-    const sorted =
-        [...items]
-            .sort(
-                (a,b) => {
-
-                    if(
-                        Math.abs(
-                            a.y - b.y
-                        ) < 4
-                    ){
-
-                        return a.x - b.x;
-
-                    }
-
-                    return b.y - a.y;
-
-                }
-            );
-
-
-    const lines = [];
+    const groups=[];
 
 
     for(
         const item
-        of sorted
+        of items
     ){
 
-        let line =
-            lines.find(
-                existing =>
-                    Math.abs(
-                        existing.y -
-                        item.y
-                    ) < 4
-            );
+        let closest=null;
 
 
-        if(!line){
+        for(
+            const group
+            of groups
+        ){
 
-            line = {
+            if(
+                Math.abs(
+                    group.y -
+                    item.y
+                ) <= 3
+            ){
+
+                closest=group;
+                break;
+
+            }
+
+        }
+
+
+        if(!closest){
+
+            closest={
 
                 y:item.y,
 
@@ -3633,189 +2101,325 @@ function rebuildPDFText(
 
             };
 
-
-            lines.push(
-                line
-            );
+            groups.push(closest);
 
         }
 
 
-        line.items.push(
-            item
-        );
+        closest.items.push(item);
 
     }
 
 
-    lines.sort(
-        (a,b) =>
-            b.y - a.y
+    groups.sort(
+        (a,b)=>
+            b.y-a.y
     );
 
 
-    return lines
-        .map(
-            line =>
+    return groups.map(group=>{
 
-                line.items
-                    .sort(
-                        (a,b) =>
-                            a.x - b.x
-                    )
-                    .map(
-                        item =>
-                            item.text
-                    )
-                    .join(" ")
+        const sorted =
+            group.items.sort(
+                (a,b)=>
+                    a.x-b.x
+            );
 
-        )
-        .join("\n");
+
+        let text="";
+
+
+        for(
+            let i=0;
+            i<sorted.length;
+            i++
+        ){
+
+            const item=
+                sorted[i];
+
+
+            if(
+                i>0
+                &&
+                item.x -
+                (
+                    sorted[i-1].x +
+                    sorted[i-1].width
+                )
+                >
+                8
+            ){
+
+                text+=" ";
+
+            }
+
+            text+=item.text;
+
+        }
+
+
+        return {
+
+            y:group.y,
+
+            items:sorted,
+
+            text:text.trim()
+
+        };
+
+    });
 
 }
 
 
-/* =====================================================
-   FIND CANDIDATES
-====================================================== */
+/* =========================================================
+   FIND TARGET CANDIDATES
+========================================================= */
 
-function findCandidates(
-    text,
-    page
+function findTargetCandidates(
+    page,
+    key,
+    unit,
+    headerYears
 ){
 
-    const lines =
-        makeLines(
-            text
-        );
+    const target =
+        TARGETS[key];
 
-
-    const unit =
-        detectUnit(
-            text
-        );
-
-
-    const yearHeader =
-        detectYearHeader(
-            lines
-        );
-
-
-    const output = [];
+    const output=[];
 
 
     for(
-        const [
-            key,
-            target
-        ]
-        of Object.entries(
-            TARGETS
-        )
+        let i=0;
+        i<page.lines.length;
+        i++
     ){
 
-        for(
-            let i = 0;
-            i < lines.length;
-            i++
+        const line =
+            page.lines[i];
+
+
+        const exact =
+            target.patterns.some(
+                pattern =>
+                    pattern.test(
+                        line.text
+                    )
+            );
+
+
+        const weak =
+            !exact
+            &&
+            target.weaker.some(
+                pattern =>
+                    pattern.test(
+                        line.text
+                    )
+            );
+
+
+        if(
+            !exact
+            &&
+            !weak
         ){
 
-            const line =
-                lines[i];
+            continue;
+
+        }
 
 
-            const match =
-                target.patterns.some(
-                    pattern =>
-                        pattern.test(
-                            line
-                        )
-                );
+        /*
+           Ambil line + kemungkinan continuation.
+        */
 
-
-            if(!match){
-
-                continue;
-
-            }
-
-
-            /*
-               Ambil beberapa baris
-               di sekitar target.
-            */
-
-            const start =
-                Math.max(
-                    0,
-                    i - 3
-                );
-
-
-            const end =
+        const nearby =
+            page.lines.slice(
+                i,
                 Math.min(
-                    lines.length,
-                    i + 4
-                );
+                    page.lines.length,
+                    i+3
+                )
+            );
 
 
-            const window =
-                lines.slice(
-                    start,
-                    end
-                );
+        const combined =
+            nearby
+            .map(
+                x=>x.text
+            )
+            .join(" ");
 
 
-            const evidenceText =
-                window.join(
-                    "\n"
-                );
+        /*
+           Ambil kandidat angka
+           dari LINE TARGET terlebih dahulu.
+        */
+
+        let numberItems =
+            extractNumberItems(
+                line.text,
+                line.items
+            );
 
 
-            let tokens =
-                extractNumbers(
-                    evidenceText
-                );
+        /*
+           Kalau angka ada di baris berikutnya,
+           izinkan.
+        */
 
+        if(
+            numberItems.length===0
+        ){
 
-            /*
-               Kalau ada header tahun,
-               potong hanya jumlah angka
-               yang sesuai.
-            */
-
-            if(
-                yearHeader &&
-                yearHeader.years.length
-                &&
-                tokens.length >
-                yearHeader.years.length
+            for(
+                let j=1;
+                j<nearby.length;
+                j++
             ){
 
-                tokens =
-                    tokens.slice(
-                        -yearHeader.years.length
+                numberItems =
+                    extractNumberItems(
+                        nearby[j].text,
+                        nearby[j].items
                     );
 
+                if(
+                    numberItems.length
+                ){
+
+                    break;
+
+                }
+
             }
+
+        }
+
+
+        if(
+            !numberItems.length
+        ){
+
+            continue;
+
+        }
+
+
+        /*
+           Cari tahun berdasarkan posisi
+           header.
+        */
+
+        const mappings =
+            mapNumbersToYears(
+                page,
+                line,
+                numberItems,
+                headerYears
+            );
+
+
+        /*
+           Kalau mapping tahun tidak aman,
+           jangan memaksakan angka.
+        */
+
+        if(
+            !mappings.length
+        ){
+
+            continue;
+
+        }
+
+
+        const baseScore =
+            exact
+            ? 70
+            : 35;
+
+
+        for(
+            const mapping
+            of mappings
+        ){
+
+            let score =
+                baseScore;
 
 
             if(
-                !tokens.length
+                mapping.yearConfidence
+                >=
+                0.90
             ){
 
-                continue;
+                score+=20;
+
+            }
+            else if(
+                mapping.yearConfidence
+                >=
+                0.70
+            ){
+
+                score+=10;
 
             }
 
 
-            let score =
-                scoreCandidate(
-                    key,
-                    line,
-                    tokens,
-                    yearHeader,
+            if(unit){
+
+                score+=10;
+
+            }
+
+
+            /*
+               Target line sangat dekat
+               dengan statement title.
+            */
+
+            score+=10;
+
+
+            /*
+               Extra safety:
+               Jangan ambil baris dengan
+               "anak perusahaan" / segment.
+            */
+
+            if(
+                /entitas\s+anak/i.test(
+                    combined
+                )
+                ||
+                /anak\s+perusahaan/i.test(
+                    combined
+                )
+                ||
+                /subsidiar/i.test(
+                    combined
+                )
+                ||
+                /segmen/i.test(
+                    combined
+                )
+            ){
+
+                score-=35;
+
+            }
+
+
+            const rupiah =
+                convertToRupiah(
+                    mapping.value,
                     unit
                 );
 
@@ -3824,32 +2428,33 @@ function findCandidates(
 
                 key,
 
-                page,
+                statementType:
+                    page.statementType,
 
-                years:
-                    yearHeader
-                        ? yearHeader.years
-                        : [],
+                page:
+                    page.pageNumber,
 
-                tokens,
+                year:
+                    mapping.year,
 
-                values:
-                    tokens.map(
-                        token =>
-                            token.value
-                    ),
+                value:
+                    mapping.value,
 
-                unit,
+                raw:
+                    mapping.raw,
+
+                rupiah,
+
+                unitName:
+                    unit || "rupiah",
 
                 score,
 
                 evidence:
-                    evidenceText,
-
-                rawToken:
-                    tokens[0]
-                        ? tokens[0].raw
-                        : ""
+                    buildEvidence(
+                        page,
+                        i
+                    )
 
             });
 
@@ -3863,203 +2468,264 @@ function findCandidates(
 }
 
 
-/* =====================================================
-   SCORE
-====================================================== */
+/* =========================================================
+   MAP NUMBER TO YEAR
+========================================================= */
 
-function scoreCandidate(
-    key,
+function mapNumbersToYears(
+    page,
     line,
-    tokens,
-    yearHeader,
-    unit
+    numberItems,
+    headerYears
 ){
 
-    let score = 0;
+    /*
+       PENTING:
 
+       Kita tidak sekadar:
+       angka pertama = tahun pertama.
 
-    if(
-        key === "laba"
-    ){
-
-        if(
-            /laba\s+neto\s+tahun\s+berjalan/i
-                .test(line)
-        ){
-
-            score += 75;
-
-        }
-        else if(
-            /net\s+income\s+for\s+the\s+year/i
-                .test(line)
-        ){
-
-            score += 75;
-
-        }
-        else if(
-            /laba\s+bersih|laba\s+neto/i
-                .test(line)
-        ){
-
-            score += 48;
-
-        }
-
-    }
-
+       Kita gunakan posisi X.
+    */
 
     if(
-        key === "cashflow"
+        !headerYears.length
     ){
 
-        if(
-            /aktivitas\s+operasi/i
-                .test(line)
-        ){
-
-            score += 65;
-
-        }
-
-        if(
-            /arus\s+kas|cash\s+flow/i
-                .test(line)
-        ){
-
-            score += 20;
-
-        }
+        return [];
 
     }
 
 
-    if(
-        key === "assets"
-    ){
-
-        if(
-            /jumlah\s+aset/i
-                .test(line)
-            ||
-            /total\s+aset/i
-                .test(line)
-            ||
-            /total\s+assets/i
-                .test(line)
-        ){
-
-            score += 75;
-
-        }
-
-    }
-
-
-    if(unit){
-
-        score += 15;
-
-    }
-
-
-    if(
-        yearHeader &&
-        yearHeader.years.length >= 2
-    ){
-
-        score += 10;
-
-    }
-
-
-    if(
-        tokens.length
-    ){
-
-        score += 5;
-
-    }
-
-
-    return score;
-
-}
-
-
-/* =====================================================
-   CHOOSE CANDIDATE
-====================================================== */
-
-function chooseCandidate(
-    candidates,
-    key,
-    year
-){
-
-    const list =
-        candidates.filter(
-            candidate =>
-                candidate.key === key
-        );
-
-
-    const ranked = [];
+    const mappings=[];
 
 
     for(
-        const candidate
-        of list
+        const item
+        of numberItems
     ){
 
-        /*
-           CASE 1:
-           Kandidat mempunyai tahun.
-        */
+        let bestYear=null;
 
-        if(
-            candidate.years &&
-            candidate.years.includes(
-                year
-            )
+        let bestDistance=Infinity;
+
+
+        for(
+            const header
+            of headerYears
         ){
 
-            const index =
-                candidate.years.indexOf(
-                    year
+            const distance =
+                Math.abs(
+                    item.x -
+                    header.x
                 );
 
 
             if(
-                index <
-                candidate.values.length
+                distance <
+                bestDistance
             ){
 
-                ranked.push({
+                bestDistance=
+                    distance;
 
-                    ...candidate,
+                bestYear=
+                    header;
 
-                    value:
-                        candidate.values[
-                            index
-                        ],
+            }
 
-                    rawToken:
-                        candidate.tokens[
-                            index
-                        ]
-                            ? candidate
-                                .tokens[
-                                    index
-                                ]
-                                .raw
-                            : "",
+        }
 
-                    rank:
-                        candidate.score
-                        +
-                        100
+
+        if(
+            !bestYear
+        ){
+
+            continue;
+
+        }
+
+
+        /*
+           Dynamic threshold berdasarkan
+           jarak antar kolom.
+        */
+
+        const xs =
+            headerYears
+            .map(
+                x=>x.x
+            )
+            .sort(
+                (a,b)=>a-b
+            );
+
+
+        let minGap=80;
+
+
+        for(
+            let i=1;
+            i<xs.length;
+            i++
+        ){
+
+            minGap =
+                Math.min(
+                    minGap,
+                    Math.abs(
+                        xs[i]-
+                        xs[i-1]
+                    )
+                );
+
+        }
+
+
+        const threshold =
+            Math.max(
+                35,
+                minGap*.48
+            );
+
+
+        if(
+            bestDistance >
+            threshold
+        ){
+
+            continue;
+
+        }
+
+
+        const confidence =
+            Math.max(
+                0,
+                1 -
+                (
+                    bestDistance /
+                    threshold
+                )
+            );
+
+
+        mappings.push({
+
+            year:
+                bestYear.year,
+
+            x:item.x,
+
+            value:item.value,
+
+            raw:item.raw,
+
+            yearConfidence:
+                confidence
+
+        });
+
+    }
+
+
+    /*
+       Hindari dua angka berbeda
+       dipetakan ke tahun yang sama.
+    */
+
+    const bestPerYear={};
+
+
+    for(
+        const mapping
+        of mappings
+    ){
+
+        const old =
+            bestPerYear[
+                mapping.year
+            ];
+
+
+        if(
+            !old
+            ||
+            mapping.yearConfidence
+            >
+            old.yearConfidence
+        ){
+
+            bestPerYear[
+                mapping.year
+            ]=
+                mapping;
+
+        }
+
+    }
+
+
+    return Object.values(
+        bestPerYear
+    );
+
+}
+
+
+/* =========================================================
+   HEADER YEARS
+========================================================= */
+
+function detectHeaderYears(page){
+
+    const candidates=[];
+
+
+    /*
+       Tahun bisa muncul sebagai:
+       2024 2023
+       atau
+       2024
+       2023
+    */
+
+    for(
+        const line
+        of page.lines
+    ){
+
+        for(
+            const item
+            of line.items
+        ){
+
+            const matches =
+                [
+                    ...item.text.matchAll(
+                        /\b(19\d{2}|20\d{2})\b/g
+                    )
+                ];
+
+
+            for(
+                const match
+                of matches
+            ){
+
+                candidates.push({
+
+                    year:
+                        Number(
+                            match[1]
+                        ),
+
+                    x:
+                        item.x,
+
+                    y:
+                        line.y
 
                 });
 
@@ -4067,88 +2733,136 @@ function chooseCandidate(
 
         }
 
+    }
 
-        /*
-           CASE 2:
-           Hanya satu nilai.
-        */
 
-        else if(
-            (
-                !candidate.years
-                ||
-                candidate.years.length === 0
-            )
-            &&
-            candidate.values.length === 1
+    if(
+        !candidates.length
+    ){
+
+        return [];
+
+    }
+
+
+    /*
+       Cari kelompok tahun yang masuk akal.
+    */
+
+    const unique={};
+
+
+    for(
+        const candidate
+        of candidates
+    ){
+
+        if(
+            !unique[
+                candidate.year
+            ]
         ){
 
-            ranked.push({
-
-                ...candidate,
-
-                value:
-                    candidate.values[0],
-
-                rawToken:
-                    candidate.tokens[0]
-                        ? candidate.tokens[0].raw
-                        : "",
-
-                rank:
-                    candidate.score - 20
-
-            });
+            unique[
+                candidate.year
+            ]=
+                candidate;
 
         }
 
     }
 
 
-    if(
-        !ranked.length
-    ){
+    const years =
+        Object.values(
+            unique
+        )
+        .filter(
+            x =>
+                x.year>=2000
+                &&
+                x.year<=2100
+        );
+
+
+    /*
+       Sort berdasarkan posisi X
+       karena itulah urutan kolom tabel.
+    */
+
+    years.sort(
+        (a,b)=>
+            a.x-b.x
+    );
+
+
+    return years;
+
+}
+
+
+/* =========================================================
+   CHOOSE BEST CANDIDATE
+========================================================= */
+
+function chooseBest(
+    candidates,
+    key,
+    year
+){
+
+    const list =
+        candidates
+        .filter(
+            x =>
+                x.key===key
+                &&
+                x.year===year
+        );
+
+
+    if(!list.length){
 
         return null;
 
     }
 
 
-    ranked.sort(
-        (a,b) =>
-            b.rank - a.rank
+    list.sort(
+        (a,b)=>
+            b.score-a.score
     );
 
 
-    const best =
-        ranked[0];
+    const best=list[0];
 
+
+    /*
+       Kalau dua kandidat hampir sama kuat
+       tetapi nilainya berbeda,
+       jangan otomatis pilih.
+    */
 
     if(
-        ranked.length > 1
+        list.length>1
     ){
 
-        const second =
-            ranked[1];
+        const second=
+            list[1];
 
 
         if(
-            (
-                best.rank -
-                second.rank
-            ) < 12
+            Math.abs(
+                best.score-
+                second.score
+            )<12
             &&
-            String(
-                best.value
-            )
+            best.rupiah
             !==
-            String(
-                second.value
-            )
+            second.rupiah
         ){
 
-            best.ambiguous =
-                true;
+            best.ambiguous=true;
 
         }
 
@@ -4160,56 +2874,48 @@ function chooseCandidate(
 }
 
 
-/* =====================================================
-   NUMBER EXTRACTION
-====================================================== */
+/* =========================================================
+   NUMBER ITEMS
+========================================================= */
 
-function extractNumbers(
-    text
+function extractNumberItems(
+    text,
+    items
 ){
 
-    /*
-       Mendukung:
-
-       141,4
-       1.234,5
-       1,234.5
-       -35,3
-       (35,3)
-       2.134.500
-    */
-
     const regex =
-        /(?<![A-Za-z])(?:\(\s*-?\s*[0-9][0-9.,]*\s*\)|-\s*[0-9][0-9.,]*|[0-9][0-9.,]*)(?![A-Za-z])/g;
+    /(?<![A-Za-z])(?:\(\s*-?\s*[0-9][0-9.,]*\s*\)|-\s*[0-9][0-9.,]*|[0-9][0-9.,]*)(?![A-Za-z])/g;
 
 
     const matches =
-        text.match(
-            regex
-        )
-        ||
-        [];
+        [
+            ...String(text||"")
+            .matchAll(regex)
+        ];
 
 
-    const output = [];
+    const output=[];
 
 
     for(
-        const raw
+        const match
         of matches
     ){
 
+        const raw=
+            match[0];
+
+
         const normalized =
             raw
-                .replace(
-                    /[\s()]/g,
-                    ""
-                );
+            .replace(
+                /[\s()]/g,
+                ""
+            );
 
 
         /*
-           Jangan membaca tahun
-           sebagai nominal.
+           Tahun bukan nominal.
         */
 
         if(
@@ -4234,10 +2940,77 @@ function extractNumbers(
 
 
         if(
-            value === null
+            value===null
         ){
 
             continue;
+
+        }
+
+
+        /*
+           Cari item PDF yang mengandung
+           angka tersebut supaya X coordinate
+           bisa dipakai.
+        */
+
+        let x=0;
+
+        let found=false;
+
+
+        for(
+            const pdfItem
+            of items
+        ){
+
+            if(
+                normalizeNumberString(
+                    pdfItem.text
+                )
+                ===
+                normalizeNumberString(
+                    raw
+                )
+            ){
+
+                x=
+                    pdfItem.x;
+
+                found=true;
+
+                break;
+
+            }
+
+        }
+
+
+        /*
+           Kalau PDF memecah angka:
+           "141.358.466.402"
+           menjadi beberapa item,
+           gunakan posisi item pertama
+           yang punya digit.
+        */
+
+        if(!found){
+
+            const numericItem =
+                items.find(
+                    item =>
+                        /\d/.test(
+                            item.text
+                        )
+                );
+
+
+            if(numericItem){
+
+                x=
+                    numericItem.x;
+
+            }
 
         }
 
@@ -4246,7 +3019,9 @@ function extractNumbers(
 
             raw,
 
-            value
+            value,
+
+            x
 
         });
 
@@ -4258,19 +3033,14 @@ function extractNumbers(
 }
 
 
-/* =====================================================
+/* =========================================================
    NUMBER PARSER
-====================================================== */
+========================================================= */
 
-function parseNumber(
-    token
-){
+function parseNumber(token){
 
-    if(!token){
-
+    if(!token)
         return null;
-
-    }
 
 
     const negative =
@@ -4279,26 +3049,24 @@ function parseNumber(
         token.trim().startsWith("-");
 
 
-    let s =
+    let s=
         token
-            .replace(
-                /[()]/g,
-                ""
-            )
-            .replace(
-                /\s/g,
-                ""
-            )
-            .replace(
-                /[^0-9,.-]/g,
-                ""
-            );
+        .replace(
+            /[()]/g,
+            ""
+        )
+        .replace(
+            /\s/g,
+            ""
+        )
+        .replace(
+            /[^0-9,.-]/g,
+            ""
+        );
 
 
     if(
-        !/[0-9]/.test(
-            s
-        )
+        !/\d/.test(s)
     ){
 
         return null;
@@ -4307,7 +3075,8 @@ function parseNumber(
 
 
     /*
-       1.234,5
+       Indonesia:
+       1.234.567,89
     */
 
     if(
@@ -4322,13 +3091,13 @@ function parseNumber(
             s.lastIndexOf(".")
         ){
 
-            s =
+            s=
                 s.replace(
                     /\./g,
                     ""
                 );
 
-            s =
+            s=
                 s.replace(
                     ",",
                     "."
@@ -4337,7 +3106,7 @@ function parseNumber(
         }
         else{
 
-            s =
+            s=
                 s.replace(
                     /,/g,
                     ""
@@ -4347,36 +3116,27 @@ function parseNumber(
 
     }
 
-    /*
-       141,4
-       1,234
-    */
-
     else if(
         s.includes(",")
     ){
 
-        const parts =
+        const parts=
             s.split(",");
 
-
-        const last =
+        const last=
             parts[
-                parts.length - 1
+                parts.length-1
             ];
 
 
         if(
-            last.length <= 2
+            last.length<=2
         ){
 
-            s =
+            s=
                 parts
-                    .slice(
-                        0,
-                        -1
-                    )
-                    .join("")
+                .slice(0,-1)
+                .join("")
                 +
                 "."
                 +
@@ -4385,28 +3145,22 @@ function parseNumber(
         }
         else{
 
-            s =
+            s=
                 parts.join("");
 
         }
 
     }
 
-    /*
-       1.234.567
-    */
-
     else if(
         (
-            s.match(
-                /\./g
-            )
+            s.match(/\./g)
             ||
             []
-        ).length > 1
+        ).length>1
     ){
 
-        s =
+        s=
             s.replace(
                 /\./g,
                 ""
@@ -4414,25 +3168,27 @@ function parseNumber(
 
     }
 
-    /*
-       1.234
-       versus
-       141.4
-    */
-
     else if(
         s.includes(".")
     ){
 
-        const last =
-            s.split(".").pop();
+        const parts=
+            s.split(".");
 
+        const last=
+            parts[parts.length-1];
+
+
+        /*
+           1.234 = thousand
+           141.4 = decimal
+        */
 
         if(
-            last.length === 3
+            last.length===3
         ){
 
-            s =
+            s=
                 s.replace(
                     ".",
                     ""
@@ -4443,16 +3199,12 @@ function parseNumber(
     }
 
 
-    const value =
-        Number(
-            s
-        );
+    const number=
+        Number(s);
 
 
     if(
-        !Number.isFinite(
-            value
-        )
+        !Number.isFinite(number)
     ){
 
         return null;
@@ -4461,47 +3213,34 @@ function parseNumber(
 
 
     return negative
-        ? -Math.abs(value)
-        : value;
+        ? -Math.abs(number)
+        : number;
 
 }
 
 
-/* =====================================================
-   UNIT
-====================================================== */
+/* =========================================================
+   UNIT DETECTION
+========================================================= */
 
-function detectUnit(
-    text
-){
+function detectUnit(text){
 
-    const lower =
-        text.toLowerCase();
+    const t=
+        normalizeText(
+            text
+        );
 
 
-    if(
-        /(?:dalam|in)\s+(?:triliun|trillion)\s+(?:rupiah|rp)/i
-            .test(lower)
-    ){
-
-        return "triliun";
-
-    }
-
+    /*
+       Cari frasa unit terlebih dahulu.
+    */
 
     if(
-        /(?:dalam|in)\s+(?:miliar|milyar|billion)\s+(?:rupiah|rp)/i
-            .test(lower)
-    ){
-
-        return "miliar";
-
-    }
-
-
-    if(
-        /(?:dalam|in)\s+(?:juta|million)\s+(?:rupiah|rp)/i
-            .test(lower)
+        /(?:disajikan|disajikan kembali|expressed|presented).*?(?:dalam|in)\s+(?:jutaan|juta|million)\b/i
+        .test(t)
+        ||
+        /(?:dalam|in)\s+(?:jutaan|juta|million)\s+(?:rupiah|rp)?/i
+        .test(t)
     ){
 
         return "juta";
@@ -4510,8 +3249,11 @@ function detectUnit(
 
 
     if(
-        /(?:dalam|in)\s+(?:ribu|thousand)\s+(?:rupiah|rp)/i
-            .test(lower)
+        /(?:disajikan|disajikan kembali|expressed|presented).*?(?:dalam|in)\s+(?:ribuan|ribu|thousand)\b/i
+        .test(t)
+        ||
+        /(?:dalam|in)\s+(?:ribuan|ribu|thousand)\s+(?:rupiah|rp)?/i
+        .test(t)
     ){
 
         return "ribu";
@@ -4520,45 +3262,39 @@ function detectUnit(
 
 
     if(
-        /(?:dalam|in)\s+(?:rupiah|rp)/i
-            .test(lower)
+        /(?:disajikan|disajikan kembali|expressed|presented).*?(?:dalam|in)\s+(?:miliaran|miliar|milyar|billion)\b/i
+        .test(t)
+        ||
+        /(?:dalam|in)\s+(?:miliaran|miliar|milyar|billion)\s+(?:rupiah|rp)?/i
+        .test(t)
     ){
 
-        return "rupiah";
+        return "miliar";
 
     }
 
 
     if(
-        /in\s+billion/i.test(
-            lower
-        )
+        /(?:disajikan|disajikan kembali|expressed|presented).*?(?:dalam|in)\s+(?:triliunan|triliun|trillion)\b/i
+        .test(t)
+        ||
+        /(?:dalam|in)\s+(?:triliunan|triliun|trillion)\s+(?:rupiah|rp)?/i
+        .test(t)
     ){
 
-        return "billion";
+        return "triliun";
 
     }
 
 
-    if(
-        /in\s+million/i.test(
-            lower
-        )
-    ){
-
-        return "million";
-
-    }
-
-
-    return null;
+    return "rupiah";
 
 }
 
 
-/* =====================================================
-   CONVERT TO RUPIAH
-====================================================== */
+/* =========================================================
+   EXACT INTEGER CONVERSION
+========================================================= */
 
 function convertToRupiah(
     value,
@@ -4566,8 +3302,9 @@ function convertToRupiah(
 ){
 
     if(
-        value === null ||
-        value === undefined
+        value===null
+        ||
+        value===undefined
     ){
 
         return null;
@@ -4576,7 +3313,7 @@ function convertToRupiah(
 
 
     const multiplier =
-        UNIT_MULTIPLIER[
+        UNIT_MULTIPLIERS[
             unit || "rupiah"
         ]
         ||
@@ -4584,89 +3321,68 @@ function convertToRupiah(
 
 
     /*
-       Ubah decimal menjadi integer
-       tanpa floating-point error.
+       Hindari:
+       40.6 * 1e9
 
-       Contoh:
+       karena JavaScript floating-point
+       dapat menghasilkan:
+       40599999999.99999
 
-       141.4
-       ↓
-       1414 / 10
-
-       × 1.000.000.000
-
-       =
-       141.400.000.000
+       Kita ubah menjadi string
+       lalu gunakan BigInt.
     */
 
-    let str =
-        String(
-            value
-        );
+    let str=
+        String(value);
 
 
-    let negative =
+    let negative=
         str.startsWith("-");
 
 
-    if(
-        negative
-    ){
+    if(negative){
 
-        str =
-            str.substring(
-                1
-            );
+        str=
+            str.slice(1);
 
     }
 
 
-    let integerPart =
-        str;
-
-    let decimalPart =
-        "";
+    let integerPart=str;
+    let decimalPart="";
 
 
     if(
         str.includes(".")
     ){
 
-        const parts =
+        const parts=
             str.split(".");
 
-
-        integerPart =
+        integerPart=
             parts[0];
 
-
-        decimalPart =
+        decimalPart=
             parts[1] || "";
 
     }
 
 
-    /*
-       Batasi floating representation
-       yang tidak perlu.
-    */
-
-    decimalPart =
-        decimalPart
-            .replace(
-                /0+$/,
-                ""
-            );
+    decimalPart=
+        decimalPart.replace(
+            /0+$/,
+            ""
+        );
 
 
-    const scale =
+    const scale=
         10n **
         BigInt(
             decimalPart.length
         );
 
 
-    let numerator =
+    let numerator=
         BigInt(
             integerPart || "0"
         )
@@ -4678,7 +3394,7 @@ function convertToRupiah(
         decimalPart
     ){
 
-        numerator +=
+        numerator+=
             BigInt(
                 decimalPart
             );
@@ -4690,13 +3406,13 @@ function convertToRupiah(
         multiplier;
 
 
-    let result =
-        numerator /
+    let result=
+        numerator/
         scale;
 
 
-    const remainder =
-        numerator %
+    const remainder=
+        numerator%
         scale;
 
 
@@ -4705,22 +3421,17 @@ function convertToRupiah(
     */
 
     if(
-        remainder * 2n >=
-        scale
+        remainder*2n>=scale
     ){
 
-        result +=
-            1n;
+        result+=1n;
 
     }
 
 
-    if(
-        negative
-    ){
+    if(negative){
 
-        result =
-            -result;
+        result=-result;
 
     }
 
@@ -4730,151 +3441,20 @@ function convertToRupiah(
 }
 
 
-/* =====================================================
-   YEAR HEADER
-====================================================== */
-
-function detectYearHeader(
-    lines
-){
-
-    let best =
-        null;
-
-
-    for(
-        let i = 0;
-        i < lines.length;
-        i++
-    ){
-
-        const years =
-            [
-                ...lines[i]
-                    .matchAll(
-                        /\b(19\d{2}|20\d{2})\b/g
-                    )
-            ]
-            .map(
-                match =>
-                    Number(
-                        match[1]
-                    )
-            );
-
-
-        const unique =
-            [
-                ...new Set(
-                    years
-                )
-            ];
-
-
-        if(
-            unique.length >= 2
-            &&
-            unique.length <= 8
-        ){
-
-            if(
-                !best
-                ||
-                unique.length >
-                best.years.length
-            ){
-
-                best = {
-
-                    lineIndex:i,
-
-                    years:unique
-
-                };
-
-            }
-
-        }
-
-    }
-
-
-    return best;
-
-}
-
-
-/* =====================================================
-   LINES
-====================================================== */
-
-function makeLines(
-    text
-){
-
-    let lines =
-        String(
-            text || ""
-        )
-        .split(
-            /\n/
-        )
-        .map(
-            x =>
-                x.trim()
-        )
-        .filter(
-            Boolean
-        );
-
-
-    /*
-       Kalau PDF memberikan text
-       sebagai satu baris panjang,
-       pecah berdasarkan label penting.
-    */
-
-    if(
-        lines.length < 3
-    ){
-
-        lines =
-            String(
-                text || ""
-            )
-            .split(
-                /(?=(?:Laba|Laporan|Arus Kas|Total Aset|Jumlah Aset|Net Income|Cash Flow|Total Assets))/i
-            )
-            .map(
-                x =>
-                    x.trim()
-            )
-            .filter(
-                Boolean
-            );
-
-    }
-
-
-    return lines;
-
-}
-
-
-/* =====================================================
-   COMPANY
-====================================================== */
+/* =========================================================
+   COMPANY DETECTION
+========================================================= */
 
 function detectCompany(
     text,
     filename
 ){
 
-    const patterns = [
+    const patterns=[
 
-        /PT\s+[A-Z][A-Za-z0-9 .,&'’()-]{3,100}\s+(?:Tbk\.?|TBK)/i,
+        /PT\s+[A-Z][A-Za-z0-9 .,&'’()\-]{2,100}\s+Tbk\.?/i,
 
-        /PT\s+[A-Z][A-Za-z0-9 .,&'’()-]{3,100}/i
+        /PT\s+[A-Z][A-Za-z0-9 .,&'’()\-]{3,100}/i
 
     ];
 
@@ -4884,22 +3464,20 @@ function detectCompany(
         of patterns
     ){
 
-        const match =
+        const match=
             text.match(
                 pattern
             );
 
 
-        if(
-            match
-        ){
+        if(match){
 
             return match[0]
-                .replace(
-                    /\s+/g,
-                    " "
-                )
-                .trim();
+            .replace(
+                /\s+/g,
+                " "
+            )
+            .trim();
 
         }
 
@@ -4915,19 +3493,24 @@ function detectCompany(
 }
 
 
-/* =====================================================
-   CODE
-====================================================== */
+/* =========================================================
+   STOCK CODE
+========================================================= */
 
-function detectCode(
-    text
-){
+function detectStockCode(text){
 
-    const patterns = [
+    /*
+       Jangan mengambil kata acak seperti:
+       SYMBOL / CODE / DENGAN.
+    */
 
-        /(?:ticker|stock\s+code|kode\s+saham)\s*[:\-]?\s*([A-Z]{2,6})\b/i,
+    const patterns=[
 
-        /\b([A-Z]{2,6})\s+(?:Stock|Shares)\b/i
+        /(?:kode\s+saham|ticker\s+code|stock\s+code)\s*[:\-]?\s*([A-Z]{2,6})\b/i,
+
+        /\bIDX\s*[:\-]?\s*([A-Z]{2,6})\b/i,
+
+        /\(([A-Z]{2,6})\)\s*(?:Tbk|TBK)/i
 
     ];
 
@@ -4937,7 +3520,7 @@ function detectCode(
         of patterns
     ){
 
-        const match =
+        const match=
             text.match(
                 pattern
             );
@@ -4945,10 +3528,20 @@ function detectCode(
 
         if(
             match
+            &&
+            ![
+                "CODE",
+                "KODE",
+                "SYMBOL",
+                "DENGAN",
+                "WITH"
+            ].includes(
+                match[1].toUpperCase()
+            )
         ){
 
             return match[1]
-                .toUpperCase();
+            .toUpperCase();
 
         }
 
@@ -4960,94 +3553,240 @@ function detectCode(
 }
 
 
-/* =====================================================
-   YEARS
-====================================================== */
+/* =========================================================
+   OCR
+========================================================= */
 
-function parseYears(
-    value
+async function runOCR(page){
+
+    if(
+        !window.Tesseract
+    ){
+
+        throw new Error(
+            "OCR library tidak tersedia."
+        );
+
+    }
+
+
+    const viewport=
+        page.getViewport({
+            scale:1.7
+        });
+
+
+    const canvas=
+        document.createElement(
+            "canvas"
+        );
+
+
+    canvas.width=
+        Math.ceil(
+            viewport.width
+        );
+
+    canvas.height=
+        Math.ceil(
+            viewport.height
+        );
+
+
+    const ctx=
+        canvas.getContext(
+            "2d"
+        );
+
+
+    await page.render({
+
+        canvasContext:ctx,
+
+        viewport
+
+    }).promise;
+
+
+    const result=
+        await Tesseract.recognize(
+            canvas,
+            "eng"
+        );
+
+
+    return result.data.text || "";
+
+}
+
+
+/* =========================================================
+   OCR LINES
+========================================================= */
+
+function makeOCRLines(text){
+
+    return String(text||"")
+    .split(/\n/)
+    .map(
+        text=>({
+
+            text:text.trim(),
+
+            items:[],
+
+            y:0
+
+        })
+    )
+    .filter(
+        x=>x.text
+    );
+
+}
+
+
+/* =========================================================
+   NORMALIZE
+========================================================= */
+
+function normalizeText(text){
+
+    return String(
+        text || ""
+    )
+    .replace(
+        /\u00a0/g,
+        " "
+    )
+    .replace(
+        /[‐-‒–—]/g,
+        "-"
+    )
+    .replace(
+        /\s+/g,
+        " "
+    )
+    .trim();
+
+}
+
+
+/* =========================================================
+   NORMALIZE NUMBER
+========================================================= */
+
+function normalizeNumberString(text){
+
+    return String(
+        text||""
+    )
+    .replace(
+        /\s/g,
+        ""
+    )
+    .replace(
+        /[()]/g,
+        ""
+    );
+
+}
+
+
+/* =========================================================
+   EVIDENCE
+========================================================= */
+
+function buildEvidence(
+    page,
+    lineIndex
 ){
+
+    const start=
+        Math.max(
+            0,
+            lineIndex-1
+        );
+
+
+    const end=
+        Math.min(
+            page.lines.length,
+            lineIndex+3
+        );
+
+
+    return page.lines
+        .slice(
+            start,
+            end
+        )
+        .map(
+            x=>x.text
+        )
+        .join("\n");
+
+}
+
+
+/* =========================================================
+   YEAR PARSER
+========================================================= */
+
+function parseYears(value){
 
     return [
         ...new Set(
 
-            String(
-                value
-            )
+            String(value)
             .split(",")
             .map(
-                x =>
-                    Number(
-                        x.trim()
-                    )
+                x=>Number(
+                    x.trim()
+                )
             )
             .filter(
-                year =>
-                    Number.isInteger(
-                        year
-                    )
+                x=>
+                    Number.isInteger(x)
                     &&
-                    year >= 1900
+                    x>=1900
                     &&
-                    year <= 2100
+                    x<=2100
             )
 
         )
-
     ];
 
 }
 
 
-/* =====================================================
-   PROGRESS
-====================================================== */
-
-function setProgress(
-    percent,
-    title,
-    detail
-){
-
-    const safe =
-        Math.max(
-            0,
-            Math.min(
-                100,
-                percent
-            )
-        );
-
-
-    progressBar.style.width =
-        safe + "%";
-
-
-    progressPercent.textContent =
-        Math.round(
-            safe
-        )
-        +
-        "%";
-
-
-    progressTitle.textContent =
-        title;
-
-
-    progressDetail.textContent =
-        detail;
-
-}
-
-
-/* =====================================================
-   RENDER RESULTS
-====================================================== */
+/* =========================================================
+   RESULTS
+========================================================= */
 
 function renderResults(){
 
-    resultTable.innerHTML = "";
+    resultTable.innerHTML="";
+
+
+    if(
+        !results.length
+    ){
+
+        resultTable.innerHTML=`
+
+            <tr>
+                <td colspan="9">
+                    Tidak ada data yang dapat
+                    diverifikasi dari laporan konsolidasian.
+                </td>
+            </tr>
+
+        `;
+
+        return;
+
+    }
 
 
     for(
@@ -5055,253 +3794,168 @@ function renderResults(){
         of results
     ){
 
-        const tr =
-            document.createElement(
-                "tr"
-            );
+        const tr=
+            document.createElement("tr");
 
 
-        const pages =
-            [
-                row.labaPage,
-                row.cashPage,
-                row.assetsPage
-            ]
-            .filter(
-                page =>
-                    page !== null
-            );
+        const pages=[
+            row.labaPage,
+            row.cashPage,
+            row.assetsPage
+        ]
+        .filter(
+            x=>x!==null
+        );
 
 
-        const uniquePages =
-            [
-                ...new Set(
-                    pages
-                )
-            ];
+        const uniquePages=[
+            ...new Set(pages)
+        ];
 
 
-        tr.innerHTML = `
+        tr.innerHTML=`
 
-            <td
-                class="file-cell"
-                title="${escapeHTML(
-                    row.file
-                )}"
-            >
-
-                ${escapeHTML(
-                    row.file
-                )}
-
+            <td title="${esc(row.file)}">
+                ${esc(row.file)}
             </td>
 
-
             <td>
-
-                ${escapeHTML(
-                    row.company
-                )}
-
+                ${esc(row.company)}
             </td>
 
-
             <td>
-
-                ${
-                    row.code
-                    ? escapeHTML(
-                        row.code
-                    )
-                    : "—"
-                }
-
+                ${row.code
+                    ? esc(row.code)
+                    : "—"}
             </td>
 
-
             <td>
-
                 <strong>
                     ${row.year}
                 </strong>
-
             </td>
-
 
             <td class="num">
-
-                ${formatInteger(
-                    row.laba
-                )}
-
+                ${formatInteger(row.laba)}
             </td>
-
 
             <td class="num">
-
-                ${formatInteger(
-                    row.cashflow
-                )}
-
+                ${formatInteger(row.cashflow)}
             </td>
-
 
             <td class="num">
-
-                ${formatInteger(
-                    row.assets
-                )}
-
+                ${formatInteger(row.assets)}
             </td>
-
 
             <td>
-
                 ${
                     uniquePages.length
-                    ? uniquePages.join(
-                        ", "
-                    )
+                    ? uniquePages.join(", ")
                     : "—"
                 }
-
             </td>
 
-
             <td>
-
-                ${statusBadge(
-                    row.status
-                )}
-
+                ${statusBadge(row.status)}
             </td>
 
         `;
 
 
-        resultTable.appendChild(
-            tr
-        );
+        resultTable.appendChild(tr);
 
     }
 
 }
 
 
-/* =====================================================
-   STATUS BADGE
-====================================================== */
+/* =========================================================
+   STATUS
+========================================================= */
 
-function statusBadge(
-    status
-){
+function statusBadge(status){
 
-    if(
-        status ===
-        "CONFIRMED"
-    ){
+    if(status==="CONFIRMED"){
 
         return `
-
-            <span
-                class="badge-status confirmed"
-            >
+            <span class="status-badge confirmed">
                 ✓ CONFIRMED
             </span>
-
         `;
 
     }
 
 
-    if(
-        status ===
-        "CHECK"
-    ){
+    if(status==="CHECK"){
 
         return `
-
-            <span
-                class="badge-status check"
-            >
+            <span class="status-badge check">
                 ! CHECK
             </span>
-
         `;
 
     }
 
 
     return `
-
-        <span
-            class="badge-status review"
-        >
+        <span class="status-badge review">
             ! REVIEW
         </span>
-
     `;
 
 }
 
 
-/* =====================================================
+/* =========================================================
    METRICS
-====================================================== */
+========================================================= */
 
 function updateMetrics(){
 
-    metricPdf.textContent =
+    metricPdf.textContent=
         files.length;
 
 
-    metricConfirmed.textContent =
+    metricConfirmed.textContent=
         results.filter(
-            row =>
-                row.status ===
-                "CONFIRMED"
+            x=>x.status==="CONFIRMED"
         ).length;
 
 
-    metricCheck.textContent =
+    metricCheck.textContent=
         results.filter(
-            row =>
-                row.status ===
-                "CHECK"
+            x=>x.status==="CHECK"
         ).length;
 
 
-    metricReview.textContent =
+    metricReview.textContent=
         results.filter(
-            row =>
-                row.status ===
-                "REVIEW"
+            x=>x.status==="REVIEW"
         ).length;
 
 }
 
 
-/* =====================================================
+/* =========================================================
    EVIDENCE
-====================================================== */
+========================================================= */
 
 function renderEvidence(){
 
-    evidenceContainer.innerHTML = "";
+    evidenceContainer.innerHTML="";
 
 
     if(
-        evidence.length === 0
+        !evidences.length
     ){
 
-        evidenceContainer.innerHTML = `
+        evidenceContainer.innerHTML=`
 
-            <div class="notice warning">
+            <div class="warning">
 
-                Tidak ada evidence yang cukup
-                untuk ditampilkan.
-
-                Silakan cek data secara manual.
+                Tidak ditemukan evidence yang
+                cukup kuat dari tiga laporan
+                konsolidasian.
 
             </div>
 
@@ -5312,230 +3966,305 @@ function renderEvidence(){
     }
 
 
-    const groups = {};
+    const groups={};
 
 
     for(
         const item
-        of evidence
+        of evidences
     ){
 
-        const key =
+        const key=
             [
                 item.file,
                 item.year
-            ]
-            .join(
-                "__"
-            );
+            ].join("__");
 
 
         if(
             !groups[key]
         ){
 
-            groups[key] = [];
+            groups[key]=[];
 
         }
 
 
-        groups[key].push(
-            item
-        );
+        groups[key].push(item);
 
     }
 
 
-    Object.values(
-        groups
-    )
-    .forEach(
-        items => {
+    for(
+        const items
+        of Object.values(groups)
+    ){
 
-            const card =
+        const card=
+            document.createElement(
+                "div"
+            );
+
+        card.className=
+            "evidence-card";
+
+
+        const first=
+            items[0];
+
+
+        const head=
+            document.createElement(
+                "button"
+            );
+
+        head.className=
+            "evidence-head";
+
+
+        head.innerHTML=`
+
+            <div>
+
+                <div class="evidence-title">
+
+                    ${esc(first.file)}
+                    • ${first.year}
+
+                </div>
+
+                <div class="evidence-meta">
+
+                    ${items.length}
+                    data evidence
+
+                </div>
+
+            </div>
+
+            <div>▾</div>
+
+        `;
+
+
+        const body=
+            document.createElement(
+                "div"
+            );
+
+        body.className=
+            "evidence-body";
+
+
+        for(
+            const item
+            of items
+        ){
+
+            const block=
                 document.createElement(
                     "div"
                 );
 
-
-            card.className =
-                "evidence-card";
-
-
-            const first =
-                items[0];
+            block.className=
+                "ev-block";
 
 
-            const head =
-                document.createElement(
-                    "button"
-                );
+            block.innerHTML=`
 
+                <div class="ev-label">
 
-            head.className =
-                "evidence-head";
+                    ${esc(item.target)}
 
+                    • Halaman ${item.page}
 
-            head.innerHTML = `
+                    • Satuan ${esc(item.unit)}
 
-                <div>
-
-                    <div class="evidence-title">
-
-                        ${escapeHTML(
-                            first.file
-                        )}
-
-                        • ${first.year}
-
-                    </div>
-
-                    <div class="evidence-meta">
-
-                        ${items.length}
-                        bukti ditemukan
-
-                    </div>
+                    • Score ${item.score}
 
                 </div>
 
-                <div>
-                    ▾
+                <div class="ev-text">
+
+${esc(item.evidence)}
+
+                </div>
+
+                <div class="ev-result">
+
+                    Angka laporan:
+                    <strong>
+                        ${esc(item.raw)}
+                    </strong>
+
+                    →
+
+                    Rupiah:
+                    <strong>
+                        ${formatInteger(item.rupiah)}
+                    </strong>
+
                 </div>
 
             `;
 
 
-            const body =
-                document.createElement(
-                    "div"
-                );
+            body.appendChild(block);
+
+        }
 
 
-            body.className =
-                "evidence-body";
+        head.addEventListener(
+            "click",
+            ()=>{
 
-
-            for(
-                const item
-                of items
-            ){
-
-                const block =
-                    document.createElement(
-                        "div"
-                    );
-
-
-                block.className =
-                    "evidence-block";
-
-
-                block.innerHTML = `
-
-                    <div class="evidence-label">
-
-                        ${escapeHTML(
-                            item.label
-                        )}
-
-                        • Halaman
-                        ${item.page}
-
-                        • Satuan
-                        ${escapeHTML(
-                            item.unit
-                        )}
-
-                        • Score
-                        ${item.score}
-
-                    </div>
-
-
-                    <div class="evidence-text">
-
-${escapeHTML(
-    item.text
-)}
-
-                    </div>
-
-
-                    <div class="evidence-result">
-
-                        Nilai laporan:
-
-                        <strong>
-                            ${escapeHTML(
-                                item.raw
-                            )}
-                        </strong>
-
-                        →
-
-                        Nilai Rupiah:
-
-                        <strong>
-                            ${formatInteger(
-                                item.converted
-                            )}
-                        </strong>
-
-                    </div>
-
-                `;
-
-
-                body.appendChild(
-                    block
+                body.classList.toggle(
+                    "open"
                 );
 
             }
+        );
 
 
-            card.appendChild(
-                head
+        card.appendChild(head);
+        card.appendChild(body);
+
+        evidenceContainer.appendChild(card);
+
+    }
+
+}
+
+
+/* =========================================================
+   DEDUPLICATE RESULTS
+========================================================= */
+
+function deduplicateResults(rows){
+
+    const map=new Map();
+
+
+    for(
+        const row
+        of rows
+    ){
+
+        const key=
+            [
+                row.file,
+                row.year
+            ].join("|");
+
+
+        const old=
+            map.get(key);
+
+
+        if(!old){
+
+            map.set(
+                key,
+                row
             );
 
-            card.appendChild(
-                body
-            );
+            continue;
+
+        }
 
 
-            head.addEventListener(
-                "click",
-                function(){
+        /*
+           Simpan yang statusnya lebih kuat.
+        */
 
-                    body.classList.toggle(
-                        "open"
-                    );
+        const priority={
 
-                }
-            );
+            CONFIRMED:3,
+
+            CHECK:2,
+
+            REVIEW:1
+
+        };
 
 
-            evidenceContainer.appendChild(
-                card
+        if(
+            priority[row.status]
+            >
+            priority[old.status]
+        ){
+
+            map.set(
+                key,
+                row
             );
 
         }
+
+    }
+
+
+    return Array.from(
+        map.values()
     );
 
 }
 
 
-/* =====================================================
-   FORMAT INTEGER
-====================================================== */
+/* =========================================================
+   DEDUP EVIDENCE
+========================================================= */
 
-function formatInteger(
-    value
-){
+function deduplicateEvidence(items){
+
+    const map=new Map();
+
+
+    for(
+        const item
+        of items
+    ){
+
+        const key=
+            [
+                item.file,
+                item.year,
+                item.target,
+                item.page
+            ].join("|");
+
+
+        if(
+            !map.has(key)
+        ){
+
+            map.set(
+                key,
+                item
+            );
+
+        }
+
+    }
+
+
+    return Array.from(
+        map.values()
+    );
+
+}
+
+
+/* =========================================================
+   FORMAT INTEGER
+========================================================= */
+
+function formatInteger(value){
 
     if(
-        value === null ||
-        value === undefined
+        value===null
+        ||
+        value===undefined
     ){
 
         return "—";
@@ -5543,46 +4272,37 @@ function formatInteger(
     }
 
 
-    let string =
+    let str=
         value.toString();
 
 
-    let negative =
-        string.startsWith("-");
+    const negative=
+        str.startsWith("-");
 
 
-    if(
-        negative
-    ){
+    if(negative){
 
-        string =
-            string.substring(
-                1
-            );
+        str=str.slice(1);
 
     }
 
 
-    let result =
-        "";
+    let result="";
 
 
     while(
-        string.length > 3
+        str.length>3
     ){
 
-        result =
+        result=
             "."
             +
-            string.slice(
-                -3
-            )
+            str.slice(-3)
             +
             result;
 
-
-        string =
-            string.slice(
+        str=
+            str.slice(
                 0,
                 -3
             );
@@ -5590,182 +4310,89 @@ function formatInteger(
     }
 
 
-    result =
-        string
-        +
+    result=
+        str+
         result;
 
 
     return negative
-        ? "-" + result
+        ? "-"+result
         : result;
 
 }
 
 
-/* =====================================================
+/* =========================================================
+   PROGRESS
+========================================================= */
+
+function setProgress(
+    percent,
+    title,
+    detail
+){
+
+    const p=
+        Math.max(
+            0,
+            Math.min(
+                100,
+                percent
+            )
+        );
+
+
+    progressBar.style.width=
+        p+"%";
+
+
+    progressPercent.textContent=
+        Math.round(p)+"%";
+
+
+    progressTitle.textContent=
+        title;
+
+
+    progressDetail.textContent=
+        detail;
+
+}
+
+
+/* =========================================================
    CSV
-====================================================== */
+========================================================= */
 
 csvButton.addEventListener(
     "click",
-    function(){
-
-        const headers = [
-
-            "File",
-
-            "Perusahaan",
-
-            "Kode",
-
-            "Tahun",
-
-            "Laba Bersih",
-
-            "Arus Kas Aktivitas Operasi",
-
-            "Total Aset",
-
-            "Halaman Laba",
-
-            "Halaman Arus Kas",
-
-            "Halaman Aset",
-
-            "Status",
-
-            "Catatan"
-
-        ];
-
-
-        const rows =
-            results.map(
-                row => [
-
-                    row.file,
-
-                    row.company,
-
-                    row.code,
-
-                    row.year,
-
-                    row.laba === null
-                        ? ""
-                        : row.laba.toString(),
-
-                    row.cashflow === null
-                        ? ""
-                        : row.cashflow.toString(),
-
-                    row.assets === null
-                        ? ""
-                        : row.assets.toString(),
-
-                    row.labaPage ?? "",
-
-                    row.cashPage ?? "",
-
-                    row.assetsPage ?? "",
-
-                    row.status,
-
-                    row.notes.join(
-                        " | "
-                    )
-
-                ]
-            );
-
-
-        const csv =
-            [
-                headers,
-                ...rows
-            ]
-            .map(
-                row =>
-                    row
-                        .map(
-                            csvEscape
-                        )
-                        .join(",")
-            )
-            .join("\n");
-
-
-        downloadBlob(
-            "\ufeff" + csv,
-            "hasil_finextract.csv",
-            "text/csv;charset=utf-8"
-        );
-
-    }
+    exportCSV
 );
 
 
-/* =====================================================
-   XLSX
-====================================================== */
+function exportCSV(){
 
-xlsxButton.addEventListener(
-    "click",
-    function(){
+    const headers=[
 
-        if(
-            !window.XLSX
-        ){
+        "File",
+        "Perusahaan",
+        "Kode",
+        "Tahun",
+        "Laba Bersih",
+        "Arus Kas Aktivitas Operasi",
+        "Total Aset",
+        "Halaman Laba",
+        "Halaman Arus Kas",
+        "Halaman Aset",
+        "Status",
+        "Catatan"
 
-            alert(
-                "Library Excel belum tersedia. Coba refresh halaman."
-            );
-
-            return;
-
-        }
-
-
-        const data = [
-
-            [
-
-                "File",
-
-                "Perusahaan",
-
-                "Kode",
-
-                "Tahun",
-
-                "Laba Bersih",
-
-                "Arus Kas Aktivitas Operasi",
-
-                "Total Aset",
-
-                "Halaman Laba",
-
-                "Halaman Arus Kas",
-
-                "Halaman Aset",
-
-                "Status",
-
-                "Catatan"
-
-            ]
-
-        ];
+    ];
 
 
-        for(
-            const row
-            of results
-        ){
-
-            data.push([
+    const rows=
+        results.map(
+            row=>[
 
                 row.file,
 
@@ -5775,128 +4402,252 @@ xlsxButton.addEventListener(
 
                 row.year,
 
-                row.laba === null
-                    ? null
-                    : Number(
-                        row.laba
-                    ),
+                row.laba===null
+                    ? ""
+                    : row.laba.toString(),
 
-                row.cashflow === null
-                    ? null
-                    : Number(
-                        row.cashflow
-                    ),
+                row.cashflow===null
+                    ? ""
+                    : row.cashflow.toString(),
 
-                row.assets === null
-                    ? null
-                    : Number(
-                        row.assets
-                    ),
+                row.assets===null
+                    ? ""
+                    : row.assets.toString(),
 
-                row.labaPage,
+                row.labaPage ?? "",
 
-                row.cashPage,
+                row.cashPage ?? "",
 
-                row.assetsPage,
+                row.assetsPage ?? "",
 
                 row.status,
 
-                row.notes.join(
-                    " | "
-                )
+                row.notes.join(" | ")
 
-            ]);
-
-        }
-
-
-        const worksheet =
-            XLSX.utils.aoa_to_sheet(
-                data
-            );
-
-
-        worksheet[
-            "!cols"
-        ] = [
-
-            {wch:28},
-
-            {wch:35},
-
-            {wch:10},
-
-            {wch:10},
-
-            {wch:20},
-
-            {wch:25},
-
-            {wch:20},
-
-            {wch:15},
-
-            {wch:18},
-
-            {wch:15},
-
-            {wch:14},
-
-            {wch:55}
-
-        ];
-
-
-        const workbook =
-            XLSX.utils.book_new();
-
-
-        XLSX.utils.book_append_sheet(
-            workbook,
-            worksheet,
-            "Hasil Ekstraksi"
+            ]
         );
 
 
-        XLSX.writeFile(
-            workbook,
-            "hasil_finextract.xlsx"
-        );
+    const csv=
+        [
+            headers,
+            ...rows
+        ]
+        .map(
+            row =>
+                row
+                .map(csvEscape)
+                .join(",")
+        )
+        .join("\n");
 
-    }
+
+    download(
+        "\ufeff"+csv,
+        "hasil_finextract.csv",
+        "text/csv;charset=utf-8"
+    );
+
+}
+
+
+/* =========================================================
+   XLSX
+========================================================= */
+
+xlsxButton.addEventListener(
+    "click",
+    exportXLSX
 );
 
 
-/* =====================================================
-   CSV ESCAPE
-====================================================== */
+function exportXLSX(){
 
-function csvEscape(
-    value
+    if(!window.XLSX){
+
+        alert(
+            "Library Excel belum tersedia."
+        );
+
+        return;
+
+    }
+
+
+    const data=[
+
+        [
+
+            "File",
+            "Perusahaan",
+            "Kode",
+            "Tahun",
+            "Laba Bersih",
+            "Arus Kas Aktivitas Operasi",
+            "Total Aset",
+            "Halaman Laba",
+            "Halaman Arus Kas",
+            "Halaman Aset",
+            "Status",
+            "Catatan"
+
+        ]
+
+    ];
+
+
+    for(
+        const row
+        of results
+    ){
+
+        data.push([
+
+            row.file,
+
+            row.company,
+
+            row.code,
+
+            row.year,
+
+            row.laba===null
+                ? null
+                : Number(row.laba),
+
+            row.cashflow===null
+                ? null
+                : Number(row.cashflow),
+
+            row.assets===null
+                ? null
+                : Number(row.assets),
+
+            row.labaPage,
+
+            row.cashPage,
+
+            row.assetsPage,
+
+            row.status,
+
+            row.notes.join(" | ")
+
+        ]);
+
+    }
+
+
+    const ws=
+        XLSX.utils.aoa_to_sheet(
+            data
+        );
+
+
+    ws["!cols"]=[
+
+        {wch:30},
+        {wch:35},
+        {wch:10},
+        {wch:10},
+        {wch:22},
+        {wch:27},
+        {wch:22},
+        {wch:15},
+        {wch:18},
+        {wch:15},
+        {wch:14},
+        {wch:55}
+
+    ];
+
+
+    const wb=
+        XLSX.utils.book_new();
+
+
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        "Hasil"
+    );
+
+
+    XLSX.writeFile(
+        wb,
+        "hasil_finextract.xlsx"
+    );
+
+}
+
+
+/* =========================================================
+   DOWNLOAD
+========================================================= */
+
+function download(
+    content,
+    filename,
+    type
 ){
 
-    const text =
+    const blob=
+        new Blob(
+            [content],
+            {type}
+        );
+
+
+    const url=
+        URL.createObjectURL(blob);
+
+
+    const a=
+        document.createElement("a");
+
+
+    a.href=url;
+    a.download=filename;
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
+
+
+    setTimeout(
+        ()=>{
+            URL.revokeObjectURL(url);
+        },
+        1000
+    );
+
+}
+
+
+/* =========================================================
+   CSV ESCAPE
+========================================================= */
+
+function csvEscape(value){
+
+    const text=
         String(
-            value ?? ""
+            value??""
         );
 
 
     if(
-        /[",\n]/.test(
-            text
-        )
+        /[",\n]/.test(text)
     ){
 
-        return (
-            '"'
-            +
+        return '"'+
             text.replace(
                 /"/g,
                 '""'
-            )
-            +
-            '"'
-        );
+            )+
+            '"';
 
     }
 
@@ -5906,147 +4657,52 @@ function csvEscape(
 }
 
 
-/* =====================================================
-   DOWNLOAD
-====================================================== */
-
-function downloadBlob(
-    content,
-    filename,
-    type
-){
-
-    const blob =
-        new Blob(
-            [content],
-            {
-                type
-            }
-        );
-
-
-    const url =
-        URL.createObjectURL(
-            blob
-        );
-
-
-    const a =
-        document.createElement(
-            "a"
-        );
-
-
-    a.href =
-        url;
-
-
-    a.download =
-        filename;
-
-
-    document.body.appendChild(
-        a
-    );
-
-
-    a.click();
-
-
-    a.remove();
-
-
-    setTimeout(
-        function(){
-
-            URL.revokeObjectURL(
-                url
-            );
-
-        },
-        1000
-    );
-
-}
-
-
-/* =====================================================
+/* =========================================================
    BYTES
-====================================================== */
+========================================================= */
 
-function formatBytes(
-    bytes
-){
+function formatBytes(bytes){
 
-    if(
-        bytes === 0
-    ){
-
+    if(bytes===0)
         return "0 Bytes";
 
-    }
 
-
-    const units = [
-
+    const units=[
         "Bytes",
         "KB",
         "MB",
         "GB"
-
     ];
 
 
-    const i =
+    const i=
         Math.floor(
-            Math.log(
-                bytes
-            )
-            /
-            Math.log(
-                1024
-            )
+            Math.log(bytes)/
+            Math.log(1024)
         );
 
 
     return (
-
-        (
-            bytes /
-            Math.pow(
-                1024,
-                i
-            )
-        )
-        .toFixed(
-            i === 0
-                ? 0
-                : 1
-        )
-
-        +
-
-        " "
-
-        +
-
-        units[i]
-
-    );
+        bytes/
+        Math.pow(1024,i)
+    )
+    .toFixed(
+        i===0 ? 0 : 1
+    )
+    +" "+
+    units[i];
 
 }
 
 
-/* =====================================================
+/* =========================================================
    ESCAPE HTML
-====================================================== */
+========================================================= */
 
-function escapeHTML(
-    value
-){
+function esc(value){
 
     return String(
-        value ?? ""
+        value??""
     )
     .replace(
         /&/g,
@@ -6072,19 +4728,17 @@ function escapeHTML(
 }
 
 
-/* =====================================================
+/* =========================================================
    INIT
-====================================================== */
+========================================================= */
 
 renderFiles();
 
 console.log(
-    "FinExtract successfully loaded."
+    "FinExtract loaded — Consolidated Statement Mode"
 );
 
 </script>
 
-
 </body>
-
 </html>
