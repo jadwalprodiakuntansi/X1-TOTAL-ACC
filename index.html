@@ -1,1593 +1,6090 @@
-import io
-import re
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+<!DOCTYPE html>
+<html lang="id">
 
-import pandas as pd
-import streamlit as st
+<head>
 
-try:
-    import fitz  # PyMuPDF
-except ImportError:
-    fitz = None
+<meta charset="UTF-8">
 
-try:
-    import pdfplumber
-except ImportError:
-    pdfplumber = None
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>FinExtract — Financial Report Extractor</title>
+
+<meta
+    name="description"
+    content="Ekstraksi Laba Bersih, Arus Kas Operasi dan Total Aset dari Annual Report PDF."
+>
+
+<!-- =====================================================
+     LIBRARY
+====================================================== -->
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- Tesseract OCR -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<!-- SheetJS untuk XLSX -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 
-st.set_page_config(
-    page_title="FinExtract • Annual Report Scanner",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+<!-- =====================================================
+     CSS
+====================================================== -->
+
+<style>
+
+:root{
+
+    --bg:#f5f7fb;
+
+    --white:#ffffff;
+
+    --text:#101828;
+
+    --muted:#667085;
+
+    --border:#e4e7ec;
+
+    --primary:#5b4bdb;
+
+    --primary2:#7c5cff;
+
+    --green:#039855;
+
+    --greenbg:#ecfdf3;
+
+    --yellow:#b54708;
+
+    --yellowbg:#fffaeb;
+
+    --red:#d92d20;
+
+    --redbg:#fef3f2;
+
+    --shadow:
+        0 15px 45px rgba(16,24,40,.07);
+
+}
+
+*{
+
+    box-sizing:border-box;
+
+}
+
+html{
+
+    scroll-behavior:smooth;
+
+}
+
+body{
+
+    margin:0;
+
+    font-family:
+
+        Inter,
+
+        ui-sans-serif,
+
+        system-ui,
+
+        -apple-system,
+
+        BlinkMacSystemFont,
+
+        "Segoe UI",
+
+        sans-serif;
+
+    color:var(--text);
+
+    background:
+
+        radial-gradient(
+            circle at 10% 0%,
+            rgba(91,75,219,.12),
+            transparent 28%
+        ),
+
+        radial-gradient(
+            circle at 90% 10%,
+            rgba(124,92,255,.10),
+            transparent 25%
+        ),
+
+        var(--bg);
+
+}
+
+button,
+input{
+
+    font-family:inherit;
+
+}
 
 
-# =========================================================
-# STYLE
-# =========================================================
+/* =====================================================
+   BACKGROUND
+====================================================== */
 
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background: #f5f7fb;
-    }
+.bg-grid{
 
-    .hero {
-        padding: 28px 30px;
-        border-radius: 24px;
-        margin-bottom: 22px;
-        background: linear-gradient(
+    position:fixed;
+
+    inset:0;
+
+    z-index:-10;
+
+    pointer-events:none;
+
+    opacity:.35;
+
+    background-image:
+
+        linear-gradient(
+            rgba(16,24,40,.035) 1px,
+            transparent 1px
+        ),
+
+        linear-gradient(
+            90deg,
+            rgba(16,24,40,.035) 1px,
+            transparent 1px
+        );
+
+    background-size:35px 35px;
+
+}
+
+.orb{
+
+    position:fixed;
+
+    width:420px;
+
+    height:420px;
+
+    border-radius:50%;
+
+    filter:blur(110px);
+
+    opacity:.10;
+
+    pointer-events:none;
+
+    z-index:-9;
+
+}
+
+.orb.one{
+
+    background:#635bff;
+
+    left:-180px;
+
+    top:-180px;
+
+}
+
+.orb.two{
+
+    background:#a855f7;
+
+    right:-200px;
+
+    top:40%;
+
+}
+
+
+/* =====================================================
+   NAVBAR
+====================================================== */
+
+.navbar{
+
+    height:76px;
+
+    padding:0 5%;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    position:sticky;
+
+    top:0;
+
+    z-index:100;
+
+    background:
+        rgba(255,255,255,.82);
+
+    backdrop-filter:blur(18px);
+
+    border-bottom:
+        1px solid rgba(228,231,236,.85);
+
+}
+
+.brand{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:12px;
+
+}
+
+.brand-icon{
+
+    width:44px;
+
+    height:44px;
+
+    display:grid;
+
+    place-items:center;
+
+    border-radius:13px;
+
+    color:white;
+
+    font-size:21px;
+
+    background:
+        linear-gradient(
+            135deg,
+            var(--primary),
+            var(--primary2)
+        );
+
+    box-shadow:
+        0 8px 22px
+        rgba(91,75,219,.22);
+
+}
+
+.brand-name{
+
+    font-size:18px;
+
+    font-weight:850;
+
+    letter-spacing:-.4px;
+
+}
+
+.brand-sub{
+
+    color:var(--muted);
+
+    font-size:10px;
+
+    margin-top:1px;
+
+}
+
+.live-status{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:7px;
+
+    color:var(--muted);
+
+    font-size:11px;
+
+}
+
+.live-dot{
+
+    width:7px;
+
+    height:7px;
+
+    border-radius:50%;
+
+    background:#12b76a;
+
+    box-shadow:
+        0 0 0 4px
+        rgba(18,183,106,.10);
+
+}
+
+
+/* =====================================================
+   CONTAINER
+====================================================== */
+
+.container{
+
+    width:min(
+        1200px,
+        calc(100% - 32px)
+    );
+
+    margin:auto;
+
+    padding:42px 0 70px;
+
+}
+
+
+/* =====================================================
+   HERO
+====================================================== */
+
+.hero{
+
+    position:relative;
+
+    overflow:hidden;
+
+    padding:58px;
+
+    border-radius:30px;
+
+    color:white;
+
+    background:
+
+        radial-gradient(
+            circle at 84% 20%,
+            rgba(255,255,255,.18),
+            transparent 25%
+        ),
+
+        linear-gradient(
             135deg,
             #101828 0%,
-            #253b80 55%,
-            #5b2c83 100%
+            #283b8f 52%,
+            #5b3b87 100%
         );
-        color: white;
-        box-shadow: 0 12px 30px rgba(16,24,40,.16);
+
+    box-shadow:
+        0 25px 65px
+        rgba(32,41,80,.22);
+
+}
+
+.hero::after{
+
+    content:"";
+
+    position:absolute;
+
+    width:330px;
+
+    height:330px;
+
+    right:-150px;
+
+    bottom:-190px;
+
+    border-radius:50%;
+
+    border:
+        1px solid
+        rgba(255,255,255,.16);
+
+    box-shadow:
+
+        0 0 0 50px
+        rgba(255,255,255,.025),
+
+        0 0 0 100px
+        rgba(255,255,255,.018);
+
+}
+
+.badge{
+
+    display:inline-flex;
+
+    padding:7px 11px;
+
+    border-radius:999px;
+
+    font-size:10px;
+
+    font-weight:850;
+
+    letter-spacing:1px;
+
+    background:
+        rgba(255,255,255,.10);
+
+    border:
+        1px solid
+        rgba(255,255,255,.13);
+
+}
+
+.hero h1{
+
+    position:relative;
+
+    z-index:2;
+
+    margin:21px 0 18px;
+
+    max-width:800px;
+
+    font-size:
+        clamp(
+            40px,
+            6vw,
+            70px
+        );
+
+    line-height:.97;
+
+    letter-spacing:-3.5px;
+
+}
+
+.hero h1 span{
+
+    display:block;
+
+    color:#c7d2fe;
+
+}
+
+.hero p{
+
+    position:relative;
+
+    z-index:2;
+
+    max-width:760px;
+
+    margin:0;
+
+    color:#dbe4ff;
+
+    line-height:1.75;
+
+    font-size:14px;
+
+}
+
+.hero-features{
+
+    position:relative;
+
+    z-index:2;
+
+    display:flex;
+
+    flex-wrap:wrap;
+
+    gap:9px;
+
+    margin-top:27px;
+
+}
+
+.hero-features div{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:7px;
+
+    padding:9px 12px;
+
+    border-radius:10px;
+
+    font-size:11px;
+
+    background:
+        rgba(255,255,255,.08);
+
+    border:
+        1px solid
+        rgba(255,255,255,.10);
+
+}
+
+.hero-features span{
+
+    color:#86efac;
+
+    font-weight:900;
+
+}
+
+
+/* =====================================================
+   CARDS
+====================================================== */
+
+.card{
+
+    margin-top:20px;
+
+    background:
+        rgba(255,255,255,.92);
+
+    border:
+        1px solid var(--border);
+
+    border-radius:22px;
+
+    box-shadow:var(--shadow);
+
+}
+
+
+/* =====================================================
+   UPLOAD
+====================================================== */
+
+.upload-card{
+
+    padding:14px;
+
+}
+
+.drop-zone{
+
+    min-height:300px;
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:center;
+
+    align-items:center;
+
+    text-align:center;
+
+    border:
+        2px dashed #cbd5e1;
+
+    border-radius:17px;
+
+    transition:.2s ease;
+
+}
+
+.drop-zone.dragging{
+
+    border-color:var(--primary);
+
+    background:
+        rgba(91,75,219,.045);
+
+    transform:scale(.995);
+
+}
+
+.upload-icon{
+
+    width:74px;
+
+    height:74px;
+
+    display:grid;
+
+    place-items:center;
+
+    border-radius:21px;
+
+    margin-bottom:17px;
+
+    font-size:35px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #eeebff,
+            #e4e0ff
+        );
+
+}
+
+.drop-zone h2{
+
+    margin:0;
+
+    font-size:23px;
+
+}
+
+.drop-zone p{
+
+    margin:8px 0 20px;
+
+    color:var(--muted);
+
+    font-size:13px;
+
+}
+
+.upload-button{
+
+    cursor:pointer;
+
+}
+
+.upload-button span{
+
+    display:inline-flex;
+
+    padding:12px 19px;
+
+    border-radius:11px;
+
+    color:white;
+
+    background:
+        linear-gradient(
+            135deg,
+            var(--primary),
+            var(--primary2)
+        );
+
+    font-size:12px;
+
+    font-weight:800;
+
+    box-shadow:
+        0 8px 20px
+        rgba(91,75,219,.18);
+
+    transition:.2s;
+
+}
+
+.upload-button span:hover{
+
+    transform:translateY(-1px);
+
+}
+
+.upload-note{
+
+    margin-top:12px;
+
+    color:#98a2b3;
+
+    font-size:10px;
+
+}
+
+
+/* =====================================================
+   SECTION
+====================================================== */
+
+.section{
+
+    margin-top:34px;
+
+}
+
+.section-header{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    gap:15px;
+
+    margin-bottom:15px;
+
+}
+
+.eyebrow{
+
+    color:var(--primary);
+
+    font-size:9px;
+
+    font-weight:900;
+
+    letter-spacing:1.4px;
+
+    margin-bottom:5px;
+
+}
+
+.section-title{
+
+    margin:0;
+
+    font-size:21px;
+
+    letter-spacing:-.5px;
+
+}
+
+
+/* =====================================================
+   SETTINGS
+====================================================== */
+
+.settings{
+
+    padding:24px;
+
+}
+
+.year-row{
+
+    display:flex;
+
+    gap:10px;
+
+}
+
+.year-input{
+
+    flex:1;
+
+    min-width:0;
+
+    height:48px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:11px;
+
+    padding:0 14px;
+
+    outline:none;
+
+    font-size:13px;
+
+    background:white;
+
+}
+
+.year-input:focus{
+
+    border-color:var(--primary);
+
+    box-shadow:
+        0 0 0 4px
+        rgba(91,75,219,.08);
+
+}
+
+.primary{
+
+    height:48px;
+
+    border:0;
+
+    padding:0 19px;
+
+    border-radius:11px;
+
+    color:white;
+
+    cursor:pointer;
+
+    font-size:12px;
+
+    font-weight:800;
+
+    background:
+        linear-gradient(
+            135deg,
+            var(--primary),
+            var(--primary2)
+        );
+
+    box-shadow:
+        0 8px 20px
+        rgba(91,75,219,.20);
+
+}
+
+.primary:hover:not(:disabled){
+
+    transform:translateY(-1px);
+
+}
+
+.primary:disabled{
+
+    opacity:.45;
+
+    cursor:not-allowed;
+
+    box-shadow:none;
+
+}
+
+.secondary{
+
+    height:42px;
+
+    padding:0 14px;
+
+    border:0;
+
+    border-radius:10px;
+
+    color:var(--primary);
+
+    background:#f1efff;
+
+    cursor:pointer;
+
+    font-size:11px;
+
+    font-weight:800;
+
+}
+
+.ghost{
+
+    padding:9px 12px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:10px;
+
+    background:white;
+
+    color:var(--muted);
+
+    cursor:pointer;
+
+    font-size:10px;
+
+    font-weight:700;
+
+}
+
+.ghost:hover{
+
+    color:var(--red);
+
+    border-color:#fecdca;
+
+}
+
+.targets{
+
+    display:flex;
+
+    flex-wrap:wrap;
+
+    gap:8px;
+
+    margin-top:15px;
+
+}
+
+.target{
+
+    padding:8px 11px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:9px;
+
+    background:#f8fafc;
+
+    font-size:10px;
+
+    font-weight:700;
+
+}
+
+.target b{
+
+    color:var(--primary);
+
+    margin-right:5px;
+
+}
+
+
+/* =====================================================
+   FILE LIST
+====================================================== */
+
+.file-grid{
+
+    display:grid;
+
+    grid-template-columns:
+        repeat(
+            auto-fill,
+            minmax(250px,1fr)
+        );
+
+    gap:10px;
+
+}
+
+.file-item{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:11px;
+
+    padding:13px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:13px;
+
+    background:white;
+
+}
+
+.file-icon{
+
+    width:38px;
+
+    height:38px;
+
+    display:grid;
+
+    place-items:center;
+
+    flex-shrink:0;
+
+    border-radius:10px;
+
+    background:#fff1f0;
+
+    font-size:18px;
+
+}
+
+.file-info{
+
+    min-width:0;
+
+    flex:1;
+
+}
+
+.file-name{
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+    white-space:nowrap;
+
+    font-size:11px;
+
+    font-weight:800;
+
+}
+
+.file-size{
+
+    margin-top:3px;
+
+    color:var(--muted);
+
+    font-size:9px;
+
+}
+
+
+/* =====================================================
+   PROGRESS
+====================================================== */
+
+.progress{
+
+    padding:21px 23px;
+
+}
+
+.progress-top{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    gap:15px;
+
+}
+
+.progress-title{
+
+    font-size:12px;
+
+    font-weight:800;
+
+}
+
+.progress-detail{
+
+    margin-top:4px;
+
+    color:var(--muted);
+
+    font-size:10px;
+
+}
+
+.progress-track{
+
+    height:8px;
+
+    margin-top:14px;
+
+    overflow:hidden;
+
+    border-radius:999px;
+
+    background:#eaecf0;
+
+}
+
+.progress-bar{
+
+    width:0%;
+
+    height:100%;
+
+    border-radius:999px;
+
+    background:
+        linear-gradient(
+            90deg,
+            var(--primary),
+            #8b5cf6
+        );
+
+    transition:
+        width .25s ease;
+
+}
+
+.progress-status{
+
+    min-height:17px;
+
+    margin-top:8px;
+
+    color:var(--muted);
+
+    font-size:9px;
+
+}
+
+
+/* =====================================================
+   METRICS
+====================================================== */
+
+.metrics{
+
+    display:grid;
+
+    grid-template-columns:
+        repeat(4,1fr);
+
+    gap:12px;
+
+}
+
+.metric{
+
+    padding:19px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:17px;
+
+    background:white;
+
+    box-shadow:
+        0 8px 25px
+        rgba(16,24,40,.04);
+
+}
+
+.metric-icon{
+
+    width:34px;
+
+    height:34px;
+
+    display:grid;
+
+    place-items:center;
+
+    border-radius:9px;
+
+    background:#f2f4f7;
+
+    margin-bottom:13px;
+
+    font-size:14px;
+
+    font-weight:900;
+
+}
+
+.metric-label{
+
+    color:var(--muted);
+
+    font-size:8px;
+
+    font-weight:900;
+
+    letter-spacing:1px;
+
+}
+
+.metric-value{
+
+    margin-top:3px;
+
+    font-size:28px;
+
+    font-weight:900;
+
+    letter-spacing:-1px;
+
+}
+
+.metric.success .metric-icon{
+
+    color:var(--green);
+
+    background:var(--greenbg);
+
+}
+
+.metric.warning .metric-icon{
+
+    color:var(--yellow);
+
+    background:var(--yellowbg);
+
+}
+
+.metric.danger .metric-icon{
+
+    color:var(--red);
+
+    background:var(--redbg);
+
+}
+
+
+/* =====================================================
+   RESULT
+====================================================== */
+
+.result{
+
+    overflow:hidden;
+
+}
+
+.result-head{
+
+    padding:24px;
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    gap:15px;
+
+    border-bottom:
+        1px solid var(--border);
+
+}
+
+.actions{
+
+    display:flex;
+
+    gap:8px;
+
+}
+
+.table-wrap{
+
+    width:100%;
+
+    overflow:auto;
+
+}
+
+table{
+
+    width:100%;
+
+    min-width:1050px;
+
+    border-collapse:collapse;
+
+}
+
+th{
+
+    padding:13px 15px;
+
+    text-align:left;
+
+    background:#f9fafb;
+
+    color:#667085;
+
+    font-size:8px;
+
+    letter-spacing:.8px;
+
+    white-space:nowrap;
+
+}
+
+td{
+
+    padding:14px 15px;
+
+    border-top:
+        1px solid #f0f2f5;
+
+    font-size:10px;
+
+    white-space:nowrap;
+
+}
+
+.num{
+
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        monospace;
+
+    font-weight:700;
+
+}
+
+.file-cell{
+
+    max-width:210px;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+}
+
+.badge-status{
+
+    display:inline-flex;
+
+    padding:5px 8px;
+
+    border-radius:999px;
+
+    font-size:8px;
+
+    font-weight:900;
+
+}
+
+.confirmed{
+
+    color:var(--green);
+
+    background:var(--greenbg);
+
+}
+
+.check{
+
+    color:var(--yellow);
+
+    background:var(--yellowbg);
+
+}
+
+.review{
+
+    color:var(--red);
+
+    background:var(--redbg);
+
+}
+
+
+/* =====================================================
+   EVIDENCE
+====================================================== */
+
+.evidence-card{
+
+    margin-bottom:10px;
+
+    overflow:hidden;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:15px;
+
+    background:white;
+
+}
+
+.evidence-head{
+
+    width:100%;
+
+    padding:15px 17px;
+
+    border:0;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    cursor:pointer;
+
+    text-align:left;
+
+    background:white;
+
+}
+
+.evidence-head:hover{
+
+    background:#fafafa;
+
+}
+
+.evidence-title{
+
+    font-size:11px;
+
+    font-weight:850;
+
+}
+
+.evidence-meta{
+
+    margin-top:4px;
+
+    color:var(--muted);
+
+    font-size:9px;
+
+}
+
+.evidence-body{
+
+    display:none;
+
+    padding:
+        0 17px 17px;
+
+}
+
+.evidence-body.open{
+
+    display:block;
+
+}
+
+.evidence-block{
+
+    margin-top:9px;
+
+}
+
+.evidence-label{
+
+    margin-bottom:5px;
+
+    font-size:9px;
+
+    font-weight:850;
+
+}
+
+.evidence-text{
+
+    padding:11px;
+
+    border:
+        1px solid #eaecf0;
+
+    border-radius:9px;
+
+    background:#f8fafc;
+
+    color:#344054;
+
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        monospace;
+
+    font-size:9px;
+
+    line-height:1.65;
+
+    white-space:pre-wrap;
+
+    overflow:auto;
+
+}
+
+.evidence-result{
+
+    margin-top:6px;
+
+    color:var(--muted);
+
+    font-size:9px;
+
+}
+
+
+/* =====================================================
+   EMPTY / ALERT
+====================================================== */
+
+.notice{
+
+    padding:16px;
+
+    border-radius:13px;
+
+    border:
+        1px solid var(--border);
+
+    background:#f8fafc;
+
+    color:var(--muted);
+
+    font-size:10px;
+
+    line-height:1.6;
+
+}
+
+.notice.warning{
+
+    color:#92400e;
+
+    background:#fffbeb;
+
+    border-color:#fde68a;
+
+}
+
+
+/* =====================================================
+   FOOTER
+====================================================== */
+
+footer{
+
+    margin-top:55px;
+
+    padding-top:23px;
+
+    display:flex;
+
+    justify-content:space-between;
+
+    border-top:
+        1px solid var(--border);
+
+    color:#98a2b3;
+
+    font-size:9px;
+
+}
+
+
+/* =====================================================
+   HIDDEN
+====================================================== */
+
+.hidden{
+
+    display:none !important;
+
+}
+
+
+/* =====================================================
+   MOBILE
+====================================================== */
+
+@media(max-width:800px){
+
+    .navbar{
+
+        padding:0 18px;
+
     }
 
-    .hero h1 {
-        margin: 0;
-        font-size: 2.35rem;
+    .live-status{
+
+        display:none;
+
     }
 
-    .hero p {
-        margin: 8px 0 0;
-        color: #dbe4ff;
-        font-size: 1.02rem;
+    .container{
+
+        width:
+            calc(100% - 20px);
+
+        padding-top:20px;
+
     }
 
-    .card {
-        background: white;
-        padding: 18px 20px;
-        border-radius: 18px;
-        border: 1px solid #e4e7ec;
-        box-shadow: 0 5px 16px rgba(16,24,40,.05);
+    .hero{
+
+        padding:38px 25px;
+
+        border-radius:23px;
+
     }
 
-    .small {
-        color: #667085;
-        font-size: .82rem;
+    .hero h1{
+
+        font-size:43px;
+
+        letter-spacing:-2.3px;
+
     }
 
-    .evidence {
-        background: #f8fafc;
-        border-left: 4px solid #7f56d9;
-        padding: 10px 12px;
-        border-radius: 8px;
-        font-family: ui-monospace,
-                     SFMono-Regular,
-                     Menlo,
-                     monospace;
-        font-size: .82rem;
-        white-space: pre-wrap;
+    .year-row{
+
+        flex-direction:column;
+
     }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+
+    .metrics{
+
+        grid-template-columns:
+            repeat(2,1fr);
+
+    }
+
+    .result-head{
+
+        align-items:flex-start;
+
+        flex-direction:column;
+
+    }
+
+    .actions{
+
+        width:100%;
+
+    }
+
+    .actions button{
+
+        flex:1;
+
+    }
+
+    footer{
+
+        flex-direction:column;
+
+        gap:6px;
+
+    }
+
+}
+
+</style>
+
+</head>
 
 
-st.markdown(
-    """
-    <div class="hero">
-        <h1>📊 FinExtract</h1>
-        <p>
-            Annual Report →
-            Laba Bersih • Arus Kas Operasi • Total Aset
-        </p>
-        <p class="small" style="color:#c7d2fe">
-            Evidence-first extraction.
-            Tidak mengarang angka ketika bukti tidak cukup.
-        </p>
+<body>
+
+
+<div class="bg-grid"></div>
+
+<div class="orb one"></div>
+
+<div class="orb two"></div>
+
+
+<!-- =====================================================
+     NAVBAR
+====================================================== -->
+
+<nav class="navbar">
+
+    <div class="brand">
+
+        <div class="brand-icon">
+            📊
+        </div>
+
+        <div>
+
+            <div class="brand-name">
+                FinExtract
+            </div>
+
+            <div class="brand-sub">
+                Annual Report Financial Extractor
+            </div>
+
+        </div>
+
     </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
-# =========================================================
-# TARGET
-# =========================================================
+    <div class="live-status">
 
-TARGETS = {
+        <span class="live-dot"></span>
 
-    "LABA BERSIH": [
-        r"laba\s+neto\s+tahun\s+berjalan",
-        r"laba\s+bersih\s+tahun\s+berjalan",
-        r"net\s+income\s+for\s+the\s+year",
-        r"profit\s+for\s+the\s+year",
-        r"laba\s+neto\s*$",
-        r"laba\s+bersih\s*$",
-    ],
+        Browser Processing
 
-    "ARUS KAS AKTIVITAS OPERASI": [
-        r"arus\s+kas\s+(?:diperoleh|digunakan).*?aktivitas\s+operasi",
-        r"kas\s+neto\s+diperoleh.*?aktivitas\s+operasi",
-        r"cash\s+flow\s+provided\s+by.*?operating\s+activities",
-        r"cash\s+flows?.*?operating\s+activities",
-        r"operating\s+activities",
-    ],
+    </div>
 
-    "TOTAL ASET": [
-        r"jumlah\s+aset",
-        r"total\s+aset",
-        r"total\s+assets",
-    ],
+</nav>
+
+
+
+<main class="container">
+
+
+<!-- =====================================================
+     HERO
+====================================================== -->
+
+<section class="hero">
+
+    <div class="badge">
+        ⚡ FINANCIAL DATA AUTOMATION
+    </div>
+
+    <h1>
+
+        Dari PDF
+
+        <span>
+            Jadi Data Tabulasi.
+        </span>
+
+    </h1>
+
+    <p>
+
+        Upload Annual Report dan FinExtract akan
+        mencari <strong>Laba Bersih</strong>,
+        <strong>Arus Kas dari Aktivitas Operasi</strong>,
+        dan <strong>Total Aset</strong> beserta
+        halaman sumber dan satuannya.
+
+    </p>
+
+
+    <div class="hero-features">
+
+        <div>
+            <span>✓</span>
+            Deteksi tahun
+        </div>
+
+        <div>
+            <span>✓</span>
+            Deteksi satuan
+        </div>
+
+        <div>
+            <span>✓</span>
+            Negatif accounting
+        </div>
+
+        <div>
+            <span>✓</span>
+            Evidence halaman
+        </div>
+
+        <div>
+            <span>✓</span>
+            CSV / XLSX
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =====================================================
+     UPLOAD
+====================================================== -->
+
+<section class="card upload-card">
+
+    <div
+        id="dropZone"
+        class="drop-zone"
+    >
+
+        <div class="upload-icon">
+            📄
+        </div>
+
+        <h2>
+            Upload Annual Report
+        </h2>
+
+        <p>
+            Drag & drop PDF di sini atau pilih dari komputer
+        </p>
+
+
+        <label class="upload-button">
+
+            <input
+                id="pdfInput"
+                type="file"
+                accept=".pdf,application/pdf"
+                multiple
+                hidden
+            >
+
+            <span>
+                ＋ Pilih PDF
+            </span>
+
+        </label>
+
+
+        <div class="upload-note">
+
+            Bisa upload banyak Annual Report sekaligus
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =====================================================
+     SETTINGS
+====================================================== -->
+
+<section class="card settings section">
+
+    <div class="section-header">
+
+        <div>
+
+            <div class="eyebrow">
+                PENGATURAN
+            </div>
+
+            <h2 class="section-title">
+                Tahun yang ingin dicari
+            </h2>
+
+        </div>
+
+    </div>
+
+
+    <div class="year-row">
+
+        <input
+            id="yearsInput"
+            class="year-input"
+            value="2021,2022,2023,2024,2025"
+            placeholder="2021,2022,2023,2024,2025"
+        >
+
+        <button
+            id="extractButton"
+            class="primary"
+            disabled
+        >
+            🔍 Ekstrak Data
+        </button>
+
+    </div>
+
+
+    <div class="targets">
+
+        <div class="target">
+            <b>01</b>
+            Laba Bersih
+        </div>
+
+        <div class="target">
+            <b>02</b>
+            Arus Kas Aktivitas Operasi
+        </div>
+
+        <div class="target">
+            <b>03</b>
+            Total Aset
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =====================================================
+     FILES
+====================================================== -->
+
+<section
+    id="filesSection"
+    class="section hidden"
+>
+
+    <div class="section-header">
+
+        <div>
+
+            <div class="eyebrow">
+                FILE
+            </div>
+
+            <h2 class="section-title">
+                PDF yang dipilih
+            </h2>
+
+        </div>
+
+
+        <button
+            id="clearButton"
+            class="ghost"
+        >
+            Hapus Semua
+        </button>
+
+    </div>
+
+
+    <div
+        id="fileList"
+        class="file-grid"
+    ></div>
+
+</section>
+
+
+
+<!-- =====================================================
+     PROGRESS
+====================================================== -->
+
+<section
+    id="progressSection"
+    class="card progress hidden"
+>
+
+    <div class="progress-top">
+
+        <div>
+
+            <div
+                id="progressTitle"
+                class="progress-title"
+            >
+                Mempersiapkan...
+            </div>
+
+            <div
+                id="progressDetail"
+                class="progress-detail"
+            >
+                -
+            </div>
+
+        </div>
+
+
+        <strong
+            id="progressPercent"
+        >
+            0%
+        </strong>
+
+    </div>
+
+
+    <div class="progress-track">
+
+        <div
+            id="progressBar"
+            class="progress-bar"
+        ></div>
+
+    </div>
+
+
+    <div
+        id="progressStatus"
+        class="progress-status"
+    ></div>
+
+</section>
+
+
+
+<!-- =====================================================
+     RESULTS
+====================================================== -->
+
+<section
+    id="resultsSection"
+    class="section hidden"
+>
+
+
+    <!-- METRICS -->
+
+    <div class="metrics">
+
+
+        <div class="metric">
+
+            <div class="metric-icon">
+                📄
+            </div>
+
+            <div class="metric-label">
+                PDF
+            </div>
+
+            <div
+                id="metricPdf"
+                class="metric-value"
+            >
+                0
+            </div>
+
+        </div>
+
+
+        <div class="metric success">
+
+            <div class="metric-icon">
+                ✓
+            </div>
+
+            <div class="metric-label">
+                CONFIRMED
+            </div>
+
+            <div
+                id="metricConfirmed"
+                class="metric-value"
+            >
+                0
+            </div>
+
+        </div>
+
+
+        <div class="metric warning">
+
+            <div class="metric-icon">
+                !
+            </div>
+
+            <div class="metric-label">
+                CHECK
+            </div>
+
+            <div
+                id="metricCheck"
+                class="metric-value"
+            >
+                0
+            </div>
+
+        </div>
+
+
+        <div class="metric danger">
+
+            <div class="metric-icon">
+                !
+            </div>
+
+            <div class="metric-label">
+                REVIEW
+            </div>
+
+            <div
+                id="metricReview"
+                class="metric-value"
+            >
+                0
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- TABLE -->
+
+    <div class="card result section">
+
+        <div class="result-head">
+
+            <div>
+
+                <div class="eyebrow">
+                    HASIL EKSTRAKSI
+                </div>
+
+                <h2 class="section-title">
+                    Data Keuangan
+                </h2>
+
+            </div>
+
+
+            <div class="actions">
+
+                <button
+                    id="csvButton"
+                    class="secondary"
+                >
+                    ↓ CSV
+                </button>
+
+                <button
+                    id="xlsxButton"
+                    class="primary"
+                >
+                    ↓ XLSX
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="table-wrap">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            FILE
+                        </th>
+
+                        <th>
+                            PERUSAHAAN
+                        </th>
+
+                        <th>
+                            KODE
+                        </th>
+
+                        <th>
+                            TAHUN
+                        </th>
+
+                        <th>
+                            LABA BERSIH
+                        </th>
+
+                        <th>
+                            ARUS KAS OPERASI
+                        </th>
+
+                        <th>
+                            TOTAL ASET
+                        </th>
+
+                        <th>
+                            HALAMAN
+                        </th>
+
+                        <th>
+                            STATUS
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody
+                    id="resultTable"
+                ></tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- EVIDENCE -->
+
+    <div class="section">
+
+        <div class="section-header">
+
+            <div>
+
+                <div class="eyebrow">
+                    EVIDENCE
+                </div>
+
+                <h2 class="section-title">
+                    Bukti Sumber
+                </h2>
+
+            </div>
+
+        </div>
+
+
+        <div
+            id="evidenceContainer"
+        ></div>
+
+    </div>
+
+
+</section>
+
+
+
+<footer>
+
+    <div>
+        FinExtract
+    </div>
+
+    <div>
+        Evidence-first financial extraction • GitHub Pages
+    </div>
+
+</footer>
+
+
+</main>
+
+
+
+<!-- =====================================================
+     JAVASCRIPT
+====================================================== -->
+
+<script>
+
+
+/* =====================================================
+   PDF.JS
+====================================================== */
+
+if(window.pdfjsLib){
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
 }
 
 
-# =========================================================
-# SATUAN
-# =========================================================
+/* =====================================================
+   STATE
+====================================================== */
+
+let files = [];
+
+let results = [];
+
+let evidence = [];
+
+
+/* =====================================================
+   DOM
+====================================================== */
+
+const pdfInput =
+    document.getElementById(
+        "pdfInput"
+    );
+
+const dropZone =
+    document.getElementById(
+        "dropZone"
+    );
+
+const extractButton =
+    document.getElementById(
+        "extractButton"
+    );
+
+const filesSection =
+    document.getElementById(
+        "filesSection"
+    );
+
+const fileList =
+    document.getElementById(
+        "fileList"
+    );
+
+const clearButton =
+    document.getElementById(
+        "clearButton"
+    );
 
-UNIT_MULTIPLIERS = {
+const yearsInput =
+    document.getElementById(
+        "yearsInput"
+    );
 
-    "rupiah":
-        Decimal("1"),
+const progressSection =
+    document.getElementById(
+        "progressSection"
+    );
 
-    "juta":
-        Decimal("1000000"),
+const progressBar =
+    document.getElementById(
+        "progressBar"
+    );
 
-    "million":
-        Decimal("1000000"),
+const progressPercent =
+    document.getElementById(
+        "progressPercent"
+    );
 
-    "miliar":
-        Decimal("1000000000"),
+const progressTitle =
+    document.getElementById(
+        "progressTitle"
+    );
 
-    "milyar":
-        Decimal("1000000000"),
+const progressDetail =
+    document.getElementById(
+        "progressDetail"
+    );
 
-    "billion":
-        Decimal("1000000000"),
+const progressStatus =
+    document.getElementById(
+        "progressStatus"
+    );
 
-    "triliun":
-        Decimal("1000000000000"),
+const resultsSection =
+    document.getElementById(
+        "resultsSection"
+    );
 
-    "trillion":
-        Decimal("1000000000000"),
+const resultTable =
+    document.getElementById(
+        "resultTable"
+    );
 
-    "ribu":
-        Decimal("1000"),
+const evidenceContainer =
+    document.getElementById(
+        "evidenceContainer"
+    );
 
-    "thousand":
-        Decimal("1000"),
-}
+const metricPdf =
+    document.getElementById(
+        "metricPdf"
+    );
 
+const metricConfirmed =
+    document.getElementById(
+        "metricConfirmed"
+    );
 
-# =========================================================
-# TEXT NORMALIZATION
-# =========================================================
+const metricCheck =
+    document.getElementById(
+        "metricCheck"
+    );
 
-def normalize_text(text):
+const metricReview =
+    document.getElementById(
+        "metricReview"
+    );
 
-    text = text.replace("\u00a0", " ")
-    text = text.replace("−", "-")
-    text = text.replace("–", "-")
+const csvButton =
+    document.getElementById(
+        "csvButton"
+    );
 
-    text = re.sub(
-        r"[ \t]+",
-        " ",
-        text
-    )
+const xlsxButton =
+    document.getElementById(
+        "xlsxButton"
+    );
 
-    text = re.sub(
-        r"\n{3,}",
-        "\n\n",
-        text
-    )
 
-    return text.strip()
+/* =====================================================
+   TARGETS
+====================================================== */
 
+const TARGETS = {
 
-# =========================================================
-# DETECT UNIT
-# =========================================================
+    laba:{
 
-def detect_unit(text):
+        label:"Laba Bersih",
 
-    low = text.lower()
+        patterns:[
 
-    patterns = [
+            /laba\s+neto\s+tahun\s+berjalan/i,
 
-        (
-            r"(?:dalam|in)\s+(?:juta|million)"
-            r"\s+(?:rupiah|rp)",
-            "juta"
-        ),
+            /laba\s+bersih\s+tahun\s+berjalan/i,
 
-        (
-            r"(?:dalam|in)\s+"
-            r"(?:miliar|milyar|billion)"
-            r"\s+(?:rupiah|rp)",
-            "miliar"
-        ),
+            /net\s+income\s+for\s+the\s+year/i,
 
-        (
-            r"(?:dalam|in)\s+"
-            r"(?:triliun|trillion)"
-            r"\s+(?:rupiah|rp)",
-            "triliun"
-        ),
+            /profit\s+for\s+the\s+year/i,
 
-        (
-            r"(?:dalam|in)\s+"
-            r"(?:ribu|thousand)"
-            r"\s+(?:rupiah|rp)",
-            "ribu"
-        ),
+            /net\s+profit\s+for\s+the\s+year/i,
 
-        (
-            r"(?:dalam|in)\s+"
-            r"(?:rupiah|rp)",
-            "rupiah"
-        ),
-    ]
+            /laba\s+neto/i,
 
-    for pattern, unit in patterns:
+            /laba\s+bersih/i
 
-        if re.search(
-            pattern,
-            low,
-            re.I | re.S
-        ):
-            return unit
-
-    return None
-
-
-# =========================================================
-# PARSE NUMBER
-# =========================================================
-
-def parse_number(token):
-
-    raw = token.strip()
-
-    if not raw:
-        return None
-
-    negative = (
-        bool(re.match(r"^\s*\(", raw))
-        or raw.lstrip().startswith("-")
-    )
-
-    s = raw
-
-    s = s.replace("(", "")
-    s = s.replace(")", "")
-    s = s.replace("Rp", "")
-    s = s.replace("rp", "")
-    s = s.replace(" ", "")
-
-    s = re.sub(
-        r"[^0-9,.-]",
-        "",
-        s
-    )
-
-    if not re.search(r"\d", s):
-        return None
-
-    # Contoh:
-    # 1.234,5
-    # 1,234.5
-    # 1234,5
-
-    if "," in s and "." in s:
-
-        if s.rfind(",") > s.rfind("."):
-
-            s = s.replace(".", "")
-            s = s.replace(",", ".")
-
-        else:
-
-            s = s.replace(",", "")
-
-    elif "," in s:
-
-        parts = s.split(",")
-
-        if len(parts[-1]) in (1, 2):
-
-            s = (
-                "".join(parts[:-1])
-                + "."
-                + parts[-1]
-            )
-
-        else:
-
-            s = "".join(parts)
-
-    elif s.count(".") > 1:
-
-        s = s.replace(".", "")
-
-    elif "." in s:
-
-        if len(s.split(".")[-1]) == 3:
-
-            s = s.replace(".", "")
-
-    try:
-
-        value = Decimal(s)
-
-    except InvalidOperation:
-
-        return None
-
-    if negative:
-
-        return -abs(value)
-
-    return value
-
-
-NUMBER_RE = re.compile(
-    r"(?<![A-Za-z])"
-    r"(?:"
-    r"\(\s*-?\s*[0-9][0-9.,]*\s*\)"
-    r"|"
-    r"-\s*[0-9][0-9.,]*"
-    r"|"
-    r"[0-9][0-9.,]*"
-    r")"
-    r"(?![A-Za-z])"
-)
-
-YEAR_RE = re.compile(
-    r"\b(19\d{2}|20\d{2})\b"
-)
-
-
-def extract_numbers(text):
-
-    results = []
-
-    for match in NUMBER_RE.finditer(text):
-
-        token = match.group(0)
-
-        clean = (
-            token
-            .replace("(", "")
-            .replace(")", "")
-            .replace(" ", "")
-        )
-
-        # Jangan membaca tahun sebagai nominal.
-        if re.fullmatch(
-            r"19\d{2}|20\d{2}",
-            clean
-        ):
-            continue
-
-        value = parse_number(token)
-
-        if value is not None:
-
-            results.append(
-                (
-                    match.start(),
-                    match.end(),
-                    token,
-                    value
-                )
-            )
-
-    return results
-
-
-# =========================================================
-# LINES
-# =========================================================
-
-def get_lines(text):
-
-    return [
-        x.strip()
-        for x in normalize_text(text).splitlines()
-        if x.strip()
-    ]
-
-
-# =========================================================
-# FIND YEAR HEADER
-# =========================================================
-
-def year_columns(lines):
-
-    candidates = []
-
-    for i, line in enumerate(lines):
-
-        years = [
-            int(x)
-            for x in YEAR_RE.findall(line)
         ]
 
-        years = list(
-            dict.fromkeys(years)
-        )
+    },
 
-        if 2 <= len(years) <= 8:
 
-            candidates.append(
-                (
-                    i,
-                    years
-                )
-            )
+    cashflow:{
 
-    if not candidates:
-
-        return None
-
-    candidates.sort(
-        key=lambda x: (
-            -len(x[1]),
-            x[0]
-        )
-    )
-
-    return candidates[0]
-
-
-# =========================================================
-# BUILD SEARCH WINDOWS
-# =========================================================
-
-def build_windows(
-    lines,
-    patterns,
-    radius=3
-):
+        label:
+            "Arus Kas Aktivitas Operasi",
 
-    hits = []
+        patterns:[
 
-    for i, line in enumerate(lines):
+            /arus\s+kas.*aktivitas\s+operasi/i,
 
-        low = line.lower()
+            /arus\s+kas\s+diperoleh.*aktivitas\s+operasi/i,
 
-        if any(
-            re.search(
-                pattern,
-                low,
-                re.I
-            )
-            for pattern in patterns
-        ):
+            /arus\s+kas\s+digunakan.*aktivitas\s+operasi/i,
 
-            start = max(
-                0,
-                i - radius
-            )
+            /kas\s+neto\s+diperoleh.*aktivitas\s+operasi/i,
 
-            end = min(
-                len(lines),
-                i + radius + 1
-            )
+            /cash\s+flow.*operating\s+activities/i,
 
-            hits.append(
-                (
-                    i,
-                    lines[start:end]
-                )
-            )
+            /cash\s+flows?.*operating\s+activities/i,
 
-    return hits
+            /operating\s+activities/i
 
+        ]
 
-# =========================================================
-# SCORE
-# =========================================================
+    },
 
-def score_candidate(
-    target,
-    years,
-    values,
-    page_unit,
-    line_text
-):
 
-    score = 0
+    assets:{
 
-    low = line_text.lower()
+        label:"Total Aset",
 
-    if target == "LABA BERSIH":
+        patterns:[
 
-        if re.search(
-            r"laba\s+neto\s+tahun\s+berjalan"
-            r"|net\s+income\s+for\s+the\s+year",
-            low
-        ):
-            score += 50
+            /jumlah\s+aset/i,
 
-        elif re.search(
-            r"laba\s+bersih|laba\s+neto",
-            low
-        ):
-            score += 30
+            /total\s+aset/i,
 
-    elif target == "ARUS KAS AKTIVITAS OPERASI":
+            /total\s+assets/i
 
-        if re.search(
-            r"aktivitas\s+operasi"
-            r"|operating\s+activities",
-            low
-        ):
-            score += 45
+        ]
 
-        if re.search(
-            r"arus\s+kas"
-            r"|cash\s+flow",
-            low
-        ):
-            score += 15
-
-    else:
-
-        if re.search(
-            r"jumlah\s+aset"
-            r"|total\s+aset"
-            r"|total\s+assets",
-            low
-        ):
-            score += 55
-
-    if page_unit:
-
-        score += 15
-
-    if years and values:
-
-        score += 10
-
-    if len(values) == len(years):
-
-        score += 20
-
-    elif len(values) >= 1:
-
-        score += 5
-
-    return score
-
-
-# =========================================================
-# EXTRACT PAGE CANDIDATES
-# =========================================================
-
-def extract_page_candidates(
-    page_text,
-    page_number
-):
-
-    lines = get_lines(page_text)
-
-    unit = detect_unit(page_text)
-
-    year_header = year_columns(lines)
-
-    years = (
-        year_header[1]
-        if year_header
-        else []
-    )
-
-    results = []
-
-    for target, patterns in TARGETS.items():
-
-        for hit_i, window in build_windows(
-            lines,
-            patterns,
-            radius=4
-        ):
-
-            joined = " | ".join(window)
-
-            candidates = extract_numbers(
-                joined
-            )
-
-            values = [
-                x[3]
-                for x in candidates
-            ]
-
-            if years and len(values) > len(years):
-
-                values = values[-len(years):]
-
-            score = score_candidate(
-                target,
-                years,
-                values,
-                unit,
-                lines[hit_i]
-            )
-
-            if not values:
-
-                continue
-
-            results.append(
-                {
-                    "target": target,
-                    "page": page_number,
-                    "years": years,
-                    "values": values,
-                    "unit": unit,
-                    "score": score,
-                    "evidence": joined[:1200],
-                    "hit_line": lines[hit_i],
-                }
-            )
-
-    return results
-
-
-# =========================================================
-# READ PDF
-# =========================================================
-
-def extract_pdf(uploaded_bytes):
-
-    pages = []
-
-    if fitz:
-
-        doc = fitz.open(
-            stream=uploaded_bytes,
-            filetype="pdf"
-        )
-
-        for i, page in enumerate(doc):
-
-            text = (
-                page.get_text("text")
-                or ""
-            )
-
-            pages.append(
-                (
-                    i + 1,
-                    text
-                )
-            )
-
-        doc.close()
-
-    elif pdfplumber:
-
-        with pdfplumber.open(
-            io.BytesIO(uploaded_bytes)
-        ) as pdf:
-
-            for i, page in enumerate(
-                pdf.pages
-            ):
-
-                pages.append(
-                    (
-                        i + 1,
-                        page.extract_text()
-                        or ""
-                    )
-                )
-
-    else:
-
-        raise RuntimeError(
-            "Install PyMuPDF atau pdfplumber."
-        )
-
-    candidates = []
-
-    for page_number, text in pages:
-
-        if text.strip():
-
-            candidates.extend(
-                extract_page_candidates(
-                    text,
-                    page_number
-                )
-            )
-
-    return pages, candidates
-
-
-# =========================================================
-# CHOOSE BEST CANDIDATE
-# =========================================================
-
-def choose_candidate(
-    candidates,
-    target,
-    requested_year
-):
-
-    rows = [
-        c
-        for c in candidates
-        if c["target"] == target
-    ]
-
-    ranked = []
-
-    for c in rows:
-
-        years = c["years"]
-        values = c["values"]
-
-        if requested_year in years:
-
-            idx = years.index(
-                requested_year
-            )
-
-            if idx < len(values):
-
-                rank = (
-                    c["score"]
-                    + 100
-                )
-
-                ranked.append(
-                    (
-                        rank,
-                        c,
-                        values[idx],
-                        idx
-                    )
-                )
-
-        elif (
-            len(values) == 1
-            and not years
-        ):
-
-            ranked.append(
-                (
-                    c["score"] - 20,
-                    c,
-                    values[0],
-                    0
-                )
-            )
-
-    if not ranked:
-
-        return None
-
-    ranked.sort(
-        key=lambda x: (
-            -x[0],
-            x[1]["page"]
-        )
-    )
-
-    best = ranked[0]
-
-    ambiguous = False
-
-    if len(ranked) > 1:
-
-        second = ranked[1]
-
-        if (
-            best[0] - second[0] < 12
-            and best[2] != second[2]
-        ):
-
-            ambiguous = True
-
-    return {
-        "candidate": best[1],
-        "raw_value": best[2],
-        "index": best[3],
-        "ambiguous": ambiguous,
-        "rank": best[0],
     }
 
-
-# =========================================================
-# CONVERT TO RUPIAH
-# =========================================================
-
-def convert_to_rupiah(
-    value,
-    unit
-):
-
-    multiplier = UNIT_MULTIPLIERS.get(
-        unit or "rupiah",
-        Decimal("1")
-    )
-
-    result = (
-        value * multiplier
-    ).quantize(
-        Decimal("1"),
-        rounding=ROUND_HALF_UP
-    )
-
-    return int(result)
+};
 
 
-# =========================================================
-# FORMAT
-# =========================================================
+/* =====================================================
+   UNIT
+====================================================== */
 
-def fmt_int(number):
+const UNIT_MULTIPLIER = {
 
-    return (
-        f"{number:,}"
-        .replace(",", ".")
-    )
+    rupiah:1000000000000000000n / 1000000000000000000n,
 
+    ribu:1000n,
 
-# =========================================================
-# COMPANY CODE
-# =========================================================
+    thousand:1000n,
 
-def detect_company_code(text):
+    juta:1000000n,
 
-    patterns = [
+    million:1000000n,
 
-        r"(?:ticker|kode\s+saham|stock\s+code)"
-        r"\s*[:\-]?\s*([A-Z]{2,6})\b",
+    miliar:1000000000n,
 
-        r"\b([A-Z]{2,6})\s+Stock\s+Performance\b",
-    ]
+    milyar:1000000000n,
 
-    for pattern in patterns:
+    billion:1000000000n,
 
-        match = re.search(
-            pattern,
-            text,
-            re.I
-        )
+    triliun:1000000000000n,
 
-        if match:
+    trillion:1000000000000n
 
-            return match.group(1).upper()
-
-    return ""
+};
 
 
-# =========================================================
-# MAKE RESULT
-# =========================================================
+/* =====================================================
+   FILE INPUT
+====================================================== */
 
-def make_result(
-    upload_name,
-    pages,
-    candidates,
-    requested_years
-):
+pdfInput.addEventListener(
+    "change",
+    function(){
 
-    full_text = "\n".join(
-        text
-        for _, text in pages
-    )
+        addFiles(
+            Array.from(
+                this.files
+            )
+        );
 
-    code = detect_company_code(
-        full_text
-    )
+        this.value = "";
 
-    output = []
+    }
+);
 
-    for year in requested_years:
 
-        row = {
+/* =====================================================
+   DRAG
+====================================================== */
 
-            "File": upload_name,
+dropZone.addEventListener(
+    "dragover",
+    function(event){
 
-            "Tahun": year,
+        event.preventDefault();
 
-            "Kode": code,
+        dropZone.classList.add(
+            "dragging"
+        );
 
-            "Laba Bersih": None,
+    }
+);
 
-            "Arus Kas Operasi": None,
 
-            "Total Aset": None,
+dropZone.addEventListener(
+    "dragleave",
+    function(){
 
-            "Halaman Laba": None,
+        dropZone.classList.remove(
+            "dragging"
+        );
 
-            "Halaman Arus Kas": None,
+    }
+);
 
-            "Halaman Aset": None,
 
-            "Status": "REVIEW",
+dropZone.addEventListener(
+    "drop",
+    function(event){
 
-            "Catatan": "",
+        event.preventDefault();
+
+        dropZone.classList.remove(
+            "dragging"
+        );
+
+
+        const dropped =
+            Array.from(
+                event.dataTransfer.files
+            )
+            .filter(
+                file =>
+                    file.type ===
+                    "application/pdf"
+                    ||
+                    file.name
+                        .toLowerCase()
+                        .endsWith(".pdf")
+            );
+
+
+        addFiles(
+            dropped
+        );
+
+    }
+);
+
+
+/* =====================================================
+   ADD FILES
+====================================================== */
+
+function addFiles(
+    newFiles
+){
+
+    for(
+        const file
+        of newFiles
+    ){
+
+        if(
+            !files.some(
+                existing =>
+                    existing.name ===
+                    file.name
+                    &&
+                    existing.size ===
+                    file.size
+            )
+        ){
+
+            files.push(
+                file
+            );
+
         }
 
-        warnings = []
+    }
 
-        mappings = [
 
+    renderFiles();
+
+}
+
+
+/* =====================================================
+   RENDER FILES
+====================================================== */
+
+function renderFiles(){
+
+    if(
+        files.length === 0
+    ){
+
+        filesSection.classList.add(
+            "hidden"
+        );
+
+        extractButton.disabled =
+            true;
+
+        return;
+
+    }
+
+
+    filesSection.classList.remove(
+        "hidden"
+    );
+
+    extractButton.disabled =
+        false;
+
+
+    fileList.innerHTML = "";
+
+
+    files.forEach(
+        (
+            file,
+            index
+        ) => {
+
+            const item =
+                document.createElement(
+                    "div"
+                );
+
+            item.className =
+                "file-item";
+
+
+            item.innerHTML = `
+
+                <div class="file-icon">
+                    📕
+                </div>
+
+                <div class="file-info">
+
+                    <div
+                        class="file-name"
+                        title="${escapeHTML(
+                            file.name
+                        )}"
+                    >
+                        ${escapeHTML(
+                            file.name
+                        )}
+                    </div>
+
+                    <div class="file-size">
+
+                        ${formatBytes(
+                            file.size
+                        )}
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    class="ghost"
+                    style="padding:6px 9px"
+                    data-remove="${index}"
+                >
+                    ×
+                </button>
+
+            `;
+
+
+            item
+                .querySelector(
+                    "[data-remove]"
+                )
+                .addEventListener(
+                    "click",
+                    function(){
+
+                        files.splice(
+                            index,
+                            1
+                        );
+
+                        renderFiles();
+
+                    }
+                );
+
+
+            fileList.appendChild(
+                item
+            );
+
+        }
+    );
+
+}
+
+
+/* =====================================================
+   CLEAR
+====================================================== */
+
+clearButton.addEventListener(
+    "click",
+    function(){
+
+        files = [];
+
+        results = [];
+
+        evidence = [];
+
+        renderFiles();
+
+        resultsSection.classList.add(
+            "hidden"
+        );
+
+    }
+);
+
+
+/* =====================================================
+   EXTRACT
+====================================================== */
+
+extractButton.addEventListener(
+    "click",
+    startExtraction
+);
+
+
+/* =====================================================
+   START
+====================================================== */
+
+async function startExtraction(){
+
+    const years =
+        parseYears(
+            yearsInput.value
+        );
+
+
+    if(
+        files.length === 0
+    ){
+
+        alert(
+            "Upload PDF terlebih dahulu."
+        );
+
+        return;
+
+    }
+
+
+    if(
+        years.length === 0
+    ){
+
+        alert(
+            "Masukkan tahun seperti 2021,2022,2023"
+        );
+
+        return;
+
+    }
+
+
+    results = [];
+
+    evidence = [];
+
+
+    resultsSection.classList.add(
+        "hidden"
+    );
+
+    progressSection.classList.remove(
+        "hidden"
+    );
+
+
+    extractButton.disabled =
+        true;
+
+
+    try{
+
+        for(
+            let i = 0;
+            i < files.length;
+            i++
+        ){
+
+            const file =
+                files[i];
+
+
+            setProgress(
+                (
+                    i /
+                    files.length
+                ) * 100,
+                "Membaca Annual Report...",
+                `${file.name} • file ${i+1}/${files.length}`
+            );
+
+
+            const output =
+                await processPDF(
+                    file,
+                    years
+                );
+
+
+            results.push(
+                ...output.rows
+            );
+
+
+            evidence.push(
+                ...output.evidence
+            );
+
+        }
+
+
+        renderResults();
+
+        renderEvidence();
+
+        updateMetrics();
+
+
+        resultsSection.classList.remove(
+            "hidden"
+        );
+
+
+        setProgress(
+            100,
+            "Selesai!",
+            "Semua file berhasil diproses."
+        );
+
+
+    }
+    catch(error){
+
+        console.error(
+            error
+        );
+
+        alert(
+            "Terjadi kesalahan: "
+            +
+            error.message
+        );
+
+    }
+    finally{
+
+        extractButton.disabled =
+            false;
+
+    }
+
+}
+
+
+/* =====================================================
+   PROCESS PDF
+====================================================== */
+
+async function processPDF(
+    file,
+    years
+){
+
+    const buffer =
+        await file.arrayBuffer();
+
+
+    const pdf =
+        await pdfjsLib
+            .getDocument({
+                data:buffer
+            })
+            .promise;
+
+
+    const pages = [];
+
+
+    let totalText =
+        "";
+
+
+    /*
+       ================================================
+       STEP 1
+       BACA TEXT PDF
+       ================================================
+    */
+
+    for(
+        let pageNo = 1;
+        pageNo <= pdf.numPages;
+        pageNo++
+    ){
+
+        const page =
+            await pdf.getPage(
+                pageNo
+            );
+
+
+        const content =
+            await page.getTextContent();
+
+
+        /*
+           Preserve posisi text.
+
+           Ini penting karena tabel Annual Report
+           sering mempunyai kolom tahun horizontal.
+        */
+
+        const items =
+            content.items.map(
+                item => ({
+
+                    text:
+                        item.str || "",
+
+                    x:
+                        item.transform
+                            ? item.transform[4]
+                            : 0,
+
+                    y:
+                        item.transform
+                            ? item.transform[5]
+                            : 0
+
+                })
+            );
+
+
+        const text =
+            rebuildPDFText(
+                items
+            );
+
+
+        pages.push({
+
+            number:
+                pageNo,
+
+            text,
+
+            items,
+
+            pdfPage:
+                page
+
+        });
+
+
+        totalText +=
+            "\n"
+            +
+            text;
+
+
+        setProgress(
             (
-                "LABA BERSIH",
-                "Laba Bersih",
-                "Halaman Laba"
-            ),
+                pageNo /
+                pdf.numPages
+            ) * 45,
+            "Membaca halaman PDF...",
+            `${file.name} • halaman ${pageNo}/${pdf.numPages}`
+        );
 
-            (
-                "ARUS KAS AKTIVITAS OPERASI",
-                "Arus Kas Operasi",
-                "Halaman Arus Kas"
-            ),
+    }
 
-            (
-                "TOTAL ASET",
-                "Total Aset",
-                "Halaman Aset"
-            ),
-        ]
 
-        for (
-            target,
-            column,
-            page_column
-        ) in mappings:
+    /*
+       ================================================
+       STEP 2
+       OCR FALLBACK
+       ================================================
+    */
 
-            picked = choose_candidate(
+    const averageText =
+        totalText.length /
+        Math.max(
+            1,
+            pages.length
+        );
+
+
+    if(
+        averageText < 80
+    ){
+
+        progressStatus.textContent =
+            "🔎 PDF terdeteksi sebagai scan. OCR sedang dicoba...";
+
+
+        for(
+            let i = 0;
+            i < pages.length;
+            i++
+        ){
+
+            try{
+
+                const ocr =
+                    await runOCR(
+                        pages[i].pdfPage
+                    );
+
+
+                if(
+                    ocr.length >
+                    pages[i].text.length
+                ){
+
+                    pages[i].text =
+                        normalize(
+                            ocr
+                        );
+
+                }
+
+            }
+            catch(error){
+
+                console.warn(
+                    "OCR gagal",
+                    error
+                );
+
+            }
+
+
+            setProgress(
+                45 +
+                (
+                    (i+1) /
+                    pages.length
+                ) * 35,
+                "OCR scan PDF...",
+                `${file.name} • halaman ${i+1}/${pages.length}`
+            );
+
+        }
+
+    }
+    else{
+
+        progressStatus.textContent =
+            "✓ PDF text berhasil dibaca.";
+
+    }
+
+
+    /*
+       ================================================
+       STEP 3
+       COMPANY
+       ================================================
+    */
+
+    const fullText =
+        pages
+            .map(
+                page =>
+                    page.text
+            )
+            .join("\n");
+
+
+    const company =
+        detectCompany(
+            fullText,
+            file.name
+        );
+
+
+    const code =
+        detectCode(
+            fullText
+        );
+
+
+    /*
+       ================================================
+       STEP 4
+       CANDIDATES
+       ================================================
+    */
+
+    const candidates = [];
+
+
+    for(
+        const page
+        of pages
+    ){
+
+        const pageCandidates =
+            findCandidates(
+                page.text,
+                page.number
+            );
+
+
+        candidates.push(
+            ...pageCandidates
+        );
+
+    }
+
+
+    /*
+       ================================================
+       STEP 5
+       RESULT PER TAHUN
+       ================================================
+    */
+
+    const rows = [];
+
+
+    for(
+        const year
+        of years
+    ){
+
+        const laba =
+            chooseCandidate(
                 candidates,
-                target,
+                "laba",
+                year
+            );
+
+
+        const cash =
+            chooseCandidate(
+                candidates,
+                "cashflow",
+                year
+            );
+
+
+        const assets =
+            chooseCandidate(
+                candidates,
+                "assets",
+                year
+            );
+
+
+        const row = {
+
+            file:
+                file.name,
+
+            company,
+
+            code,
+
+            year,
+
+            laba:
+                laba
+                    ? convertToRupiah(
+                        laba.value,
+                        laba.unit
+                    )
+                    : null,
+
+            cashflow:
+                cash
+                    ? convertToRupiah(
+                        cash.value,
+                        cash.unit
+                    )
+                    : null,
+
+            assets:
+                assets
+                    ? convertToRupiah(
+                        assets.value,
+                        assets.unit
+                    )
+                    : null,
+
+            labaPage:
+                laba
+                    ? laba.page
+                    : null,
+
+            cashPage:
+                cash
+                    ? cash.page
+                    : null,
+
+            assetsPage:
+                assets
+                    ? assets.page
+                    : null,
+
+            status:
+                "REVIEW",
+
+            notes:[]
+
+        };
+
+
+        /*
+           ============================================
+           VALIDASI
+           ============================================
+        */
+
+        if(!laba){
+
+            row.notes.push(
+                "Laba Bersih tidak ditemukan."
+            );
+
+        }
+
+        if(!cash){
+
+            row.notes.push(
+                "Arus Kas Aktivitas Operasi tidak ditemukan."
+            );
+
+        }
+
+        if(!assets){
+
+            row.notes.push(
+                "Total Aset tidak ditemukan."
+            );
+
+        }
+
+
+        const allFound =
+            laba &&
+            cash &&
+            assets;
+
+
+        const ambiguous =
+            (
+                laba &&
+                laba.ambiguous
+            )
+            ||
+            (
+                cash &&
+                cash.ambiguous
+            )
+            ||
+            (
+                assets &&
+                assets.ambiguous
+            );
+
+
+        const weak =
+            (
+                laba &&
+                laba.score < 90
+            )
+            ||
+            (
+                cash &&
+                cash.score < 90
+            )
+            ||
+            (
+                assets &&
+                assets.score < 90
+            );
+
+
+        if(
+            allFound &&
+            !ambiguous &&
+            !weak
+        ){
+
+            row.status =
+                "CONFIRMED";
+
+        }
+        else if(
+            allFound
+        ){
+
+            row.status =
+                "CHECK";
+
+        }
+        else{
+
+            row.status =
+                "REVIEW";
+
+        }
+
+
+        if(
+            ambiguous
+        ){
+
+            row.notes.push(
+                "Ada kandidat angka lain yang mirip; perlu verifikasi."
+            );
+
+        }
+
+
+        if(
+            weak
+        ){
+
+            row.notes.push(
+                "Bukti teks tidak cukup kuat; perlu verifikasi."
+            );
+
+        }
+
+
+        rows.push(
+            row
+        );
+
+
+        /*
+           ============================================
+           EVIDENCE
+           ============================================
+        */
+
+        const selected = [
+
+            {
+                target:laba,
+                label:"Laba Bersih"
+            },
+
+            {
+                target:cash,
+                label:
+                    "Arus Kas Aktivitas Operasi"
+            },
+
+            {
+                target:assets,
+                label:"Total Aset"
+            }
+
+        ];
+
+
+        for(
+            const item
+            of selected
+        ){
+
+            if(
+                !item.target
+            ){
+
+                continue;
+
+            }
+
+
+            evidence.push({
+
+                file:
+                    file.name,
+
+                company,
+
+                code,
+
+                year,
+
+                label:
+                    item.label,
+
+                page:
+                    item.target.page,
+
+                unit:
+                    item.target.unit ||
+                    "rupiah",
+
+                raw:
+                    item.target.rawToken,
+
+                converted:
+                    convertToRupiah(
+                        item.target.value,
+                        item.target.unit
+                    ),
+
+                score:
+                    item.target.score,
+
+                text:
+                    item.target.evidence
+
+            });
+
+        }
+
+    }
+
+
+    return {
+
+        rows,
+
+        evidence:[]
+
+    };
+
+}
+
+
+/* =====================================================
+   OCR
+====================================================== */
+
+async function runOCR(
+    page
+){
+
+    if(
+        !window.Tesseract
+    ){
+
+        throw new Error(
+            "Tesseract tidak tersedia."
+        );
+
+    }
+
+
+    const viewport =
+        page.getViewport({
+            scale:1.7
+        });
+
+
+    const canvas =
+        document.createElement(
+            "canvas"
+        );
+
+
+    canvas.width =
+        Math.ceil(
+            viewport.width
+        );
+
+    canvas.height =
+        Math.ceil(
+            viewport.height
+        );
+
+
+    const context =
+        canvas.getContext(
+            "2d"
+        );
+
+
+    await page.render({
+
+        canvasContext:
+            context,
+
+        viewport
+
+    }).promise;
+
+
+    const result =
+        await Tesseract.recognize(
+            canvas,
+            "eng",
+            {
+
+                logger:
+                    message => {
+
+                        if(
+                            message.status
+                        ){
+
+                            progressStatus.textContent =
+                                "OCR: "
+                                +
+                                message.status;
+
+                        }
+
+                    }
+
+            }
+        );
+
+
+    return (
+        result.data.text
+        ||
+        ""
+    );
+
+}
+
+
+/* =====================================================
+   REBUILD PDF TEXT
+====================================================== */
+
+function rebuildPDFText(
+    items
+){
+
+    if(
+        !items.length
+    ){
+
+        return "";
+
+    }
+
+
+    /*
+       Kelompokkan berdasarkan posisi Y.
+
+       PDF biasanya menyimpan:
+       label + angka sebagai object terpisah.
+    */
+
+    const sorted =
+        [...items]
+            .sort(
+                (a,b) => {
+
+                    if(
+                        Math.abs(
+                            a.y - b.y
+                        ) < 4
+                    ){
+
+                        return a.x - b.x;
+
+                    }
+
+                    return b.y - a.y;
+
+                }
+            );
+
+
+    const lines = [];
+
+
+    for(
+        const item
+        of sorted
+    ){
+
+        let line =
+            lines.find(
+                existing =>
+                    Math.abs(
+                        existing.y -
+                        item.y
+                    ) < 4
+            );
+
+
+        if(!line){
+
+            line = {
+
+                y:item.y,
+
+                items:[]
+
+            };
+
+
+            lines.push(
+                line
+            );
+
+        }
+
+
+        line.items.push(
+            item
+        );
+
+    }
+
+
+    lines.sort(
+        (a,b) =>
+            b.y - a.y
+    );
+
+
+    return lines
+        .map(
+            line =>
+
+                line.items
+                    .sort(
+                        (a,b) =>
+                            a.x - b.x
+                    )
+                    .map(
+                        item =>
+                            item.text
+                    )
+                    .join(" ")
+
+        )
+        .join("\n");
+
+}
+
+
+/* =====================================================
+   FIND CANDIDATES
+====================================================== */
+
+function findCandidates(
+    text,
+    page
+){
+
+    const lines =
+        makeLines(
+            text
+        );
+
+
+    const unit =
+        detectUnit(
+            text
+        );
+
+
+    const yearHeader =
+        detectYearHeader(
+            lines
+        );
+
+
+    const output = [];
+
+
+    for(
+        const [
+            key,
+            target
+        ]
+        of Object.entries(
+            TARGETS
+        )
+    ){
+
+        for(
+            let i = 0;
+            i < lines.length;
+            i++
+        ){
+
+            const line =
+                lines[i];
+
+
+            const match =
+                target.patterns.some(
+                    pattern =>
+                        pattern.test(
+                            line
+                        )
+                );
+
+
+            if(!match){
+
+                continue;
+
+            }
+
+
+            /*
+               Ambil beberapa baris
+               di sekitar target.
+            */
+
+            const start =
+                Math.max(
+                    0,
+                    i - 3
+                );
+
+
+            const end =
+                Math.min(
+                    lines.length,
+                    i + 4
+                );
+
+
+            const window =
+                lines.slice(
+                    start,
+                    end
+                );
+
+
+            const evidenceText =
+                window.join(
+                    "\n"
+                );
+
+
+            let tokens =
+                extractNumbers(
+                    evidenceText
+                );
+
+
+            /*
+               Kalau ada header tahun,
+               potong hanya jumlah angka
+               yang sesuai.
+            */
+
+            if(
+                yearHeader &&
+                yearHeader.years.length
+                &&
+                tokens.length >
+                yearHeader.years.length
+            ){
+
+                tokens =
+                    tokens.slice(
+                        -yearHeader.years.length
+                    );
+
+            }
+
+
+            if(
+                !tokens.length
+            ){
+
+                continue;
+
+            }
+
+
+            let score =
+                scoreCandidate(
+                    key,
+                    line,
+                    tokens,
+                    yearHeader,
+                    unit
+                );
+
+
+            output.push({
+
+                key,
+
+                page,
+
+                years:
+                    yearHeader
+                        ? yearHeader.years
+                        : [],
+
+                tokens,
+
+                values:
+                    tokens.map(
+                        token =>
+                            token.value
+                    ),
+
+                unit,
+
+                score,
+
+                evidence:
+                    evidenceText,
+
+                rawToken:
+                    tokens[0]
+                        ? tokens[0].raw
+                        : ""
+
+            });
+
+        }
+
+    }
+
+
+    return output;
+
+}
+
+
+/* =====================================================
+   SCORE
+====================================================== */
+
+function scoreCandidate(
+    key,
+    line,
+    tokens,
+    yearHeader,
+    unit
+){
+
+    let score = 0;
+
+
+    if(
+        key === "laba"
+    ){
+
+        if(
+            /laba\s+neto\s+tahun\s+berjalan/i
+                .test(line)
+        ){
+
+            score += 75;
+
+        }
+        else if(
+            /net\s+income\s+for\s+the\s+year/i
+                .test(line)
+        ){
+
+            score += 75;
+
+        }
+        else if(
+            /laba\s+bersih|laba\s+neto/i
+                .test(line)
+        ){
+
+            score += 48;
+
+        }
+
+    }
+
+
+    if(
+        key === "cashflow"
+    ){
+
+        if(
+            /aktivitas\s+operasi/i
+                .test(line)
+        ){
+
+            score += 65;
+
+        }
+
+        if(
+            /arus\s+kas|cash\s+flow/i
+                .test(line)
+        ){
+
+            score += 20;
+
+        }
+
+    }
+
+
+    if(
+        key === "assets"
+    ){
+
+        if(
+            /jumlah\s+aset/i
+                .test(line)
+            ||
+            /total\s+aset/i
+                .test(line)
+            ||
+            /total\s+assets/i
+                .test(line)
+        ){
+
+            score += 75;
+
+        }
+
+    }
+
+
+    if(unit){
+
+        score += 15;
+
+    }
+
+
+    if(
+        yearHeader &&
+        yearHeader.years.length >= 2
+    ){
+
+        score += 10;
+
+    }
+
+
+    if(
+        tokens.length
+    ){
+
+        score += 5;
+
+    }
+
+
+    return score;
+
+}
+
+
+/* =====================================================
+   CHOOSE CANDIDATE
+====================================================== */
+
+function chooseCandidate(
+    candidates,
+    key,
+    year
+){
+
+    const list =
+        candidates.filter(
+            candidate =>
+                candidate.key === key
+        );
+
+
+    const ranked = [];
+
+
+    for(
+        const candidate
+        of list
+    ){
+
+        /*
+           CASE 1:
+           Kandidat mempunyai tahun.
+        */
+
+        if(
+            candidate.years &&
+            candidate.years.includes(
                 year
             )
+        ){
 
-            if not picked:
+            const index =
+                candidate.years.indexOf(
+                    year
+                );
 
-                warnings.append(
-                    f"{column} tidak ditemukan untuk {year}"
-                )
 
-                continue
+            if(
+                index <
+                candidate.values.length
+            ){
 
-            candidate = picked[
-                "candidate"
-            ]
+                ranked.push({
 
-            unit = (
-                candidate["unit"]
-                or "rupiah"
-            )
+                    ...candidate,
 
-            value = convert_to_rupiah(
-                picked["raw_value"],
-                unit
-            )
+                    value:
+                        candidate.values[
+                            index
+                        ],
 
-            row[column] = value
+                    rawToken:
+                        candidate.tokens[
+                            index
+                        ]
+                            ? candidate
+                                .tokens[
+                                    index
+                                ]
+                                .raw
+                            : "",
 
-            row[page_column] = (
-                candidate["page"]
-            )
+                    rank:
+                        candidate.score
+                        +
+                        100
 
-            if not candidate["unit"]:
+                });
 
-                warnings.append(
-                    f"Satuan {column} "
-                    f"tidak terdeteksi; "
-                    f"diasumsikan rupiah"
-                )
+            }
 
-            if picked["ambiguous"]:
+        }
 
-                warnings.append(
-                    f"{column} memiliki "
-                    f"lebih dari satu kandidat"
-                )
 
-            if picked["rank"] < 100:
+        /*
+           CASE 2:
+           Hanya satu nilai.
+        */
 
-                warnings.append(
-                    f"Bukti {column} lemah"
-                )
-
-        missing = [
-
-            key
-
-            for key in (
-                "Laba Bersih",
-                "Arus Kas Operasi",
-                "Total Aset"
-            )
-
-            if row[key] is None
-        ]
-
-        if not missing and not warnings:
-
-            row["Status"] = "CONFIRMED"
-
-        elif missing:
-
-            row["Status"] = "REVIEW"
-
-        else:
-
-            row["Status"] = "CHECK"
-
-        row["Catatan"] = (
-            "; ".join(warnings)
-            if warnings
-            else
-            "Tiga pos ditemukan dengan "
-            "pemetaan tahun + satuan."
-        )
-
-        output.append(row)
-
-    return pd.DataFrame(output)
-
-
-# =========================================================
-# SIDEBAR
-# =========================================================
-
-with st.sidebar:
-
-    st.subheader(
-        "⚙️ Pengaturan ekstraksi"
-    )
-
-    years_text = st.text_input(
-        "Tahun yang dicari",
-        "2021,2022,2023,2024,2025"
-    )
-
-    try:
-
-        requested_years = [
-            int(x.strip())
-            for x in years_text.split(",")
-            if x.strip()
-        ]
-
-    except ValueError:
-
-        requested_years = []
-
-        st.error(
-            "Format tahun harus seperti "
-            "2021,2022,2023"
-        )
-
-    st.divider()
-
-    st.markdown(
-        "**Target wajib**"
-    )
-
-    st.write(
-        "✓ Laba Bersih"
-    )
-
-    st.write(
-        "✓ Arus Kas Aktivitas Operasi"
-    )
-
-    st.write(
-        "✓ Total Aset"
-    )
-
-    st.divider()
-
-    st.caption(
-        "Jika bukti tahun/satuan/pos "
-        "tidak cukup, aplikasi menandai "
-        "CHECK/REVIEW. Jangan dianggap nol."
-    )
-
-
-# =========================================================
-# UPLOAD
-# =========================================================
-
-uploaded = st.file_uploader(
-    "📄 Upload satu atau beberapa Annual Report PDF",
-    type=["pdf"],
-    accept_multiple_files=True,
-    help=(
-        "PDF text-based paling akurat. "
-        "PDF scan/image-only belum menggunakan OCR "
-        "di versi ini."
-    ),
-)
-
-
-if not uploaded:
-
-    c1, c2, c3 = st.columns(3)
-
-    cards = [
-
-        (
-            c1,
-            "1 • Upload",
-            "Masukkan Annual Report PDF."
-        ),
-
-        (
-            c2,
-            "2 • Extract",
-            "Cari tiga pos berdasarkan "
-            "istilah laporan keuangan."
-        ),
-
-        (
-            c3,
-            "3 • Validate",
-            "Lihat halaman, bukti teks, "
-            "satuan, dan status."
-        ),
-    ]
-
-    for col, title, body in cards:
-
-        with col:
-
-            st.markdown(
-                f"""
-                <div class="card">
-                    <b>{title}</b><br>
-                    <span class="small">
-                        {body}
-                    </span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-    st.info(
-        "⚠️ Evidence-first: "
-        "kalau data tidak jelas, aplikasi "
-        "tidak menebak."
-    )
-
-    st.stop()
-
-
-if not requested_years:
-
-    st.error(
-        "Masukkan minimal satu tahun valid."
-    )
-
-    st.stop()
-
-
-# =========================================================
-# PROCESS
-# =========================================================
-
-all_rows = []
-all_evidence = []
-
-progress = st.progress(0)
-
-for idx, file in enumerate(
-    uploaded,
-    start=1
-):
-
-    data = file.getvalue()
-
-    try:
-
-        pages, candidates = extract_pdf(
-            data
-        )
-
-        df = make_result(
-            file.name,
-            pages,
-            candidates,
-            requested_years
-        )
-
-        all_rows.append(df)
-
-        all_evidence.append(
+        else if(
             (
-                file.name,
-                pages,
-                candidates
+                !candidate.years
+                ||
+                candidate.years.length === 0
             )
+            &&
+            candidate.values.length === 1
+        ){
+
+            ranked.push({
+
+                ...candidate,
+
+                value:
+                    candidate.values[0],
+
+                rawToken:
+                    candidate.tokens[0]
+                        ? candidate.tokens[0].raw
+                        : "",
+
+                rank:
+                    candidate.score - 20
+
+            });
+
+        }
+
+    }
+
+
+    if(
+        !ranked.length
+    ){
+
+        return null;
+
+    }
+
+
+    ranked.sort(
+        (a,b) =>
+            b.rank - a.rank
+    );
+
+
+    const best =
+        ranked[0];
+
+
+    if(
+        ranked.length > 1
+    ){
+
+        const second =
+            ranked[1];
+
+
+        if(
+            (
+                best.rank -
+                second.rank
+            ) < 12
+            &&
+            String(
+                best.value
+            )
+            !==
+            String(
+                second.value
+            )
+        ){
+
+            best.ambiguous =
+                true;
+
+        }
+
+    }
+
+
+    return best;
+
+}
+
+
+/* =====================================================
+   NUMBER EXTRACTION
+====================================================== */
+
+function extractNumbers(
+    text
+){
+
+    /*
+       Mendukung:
+
+       141,4
+       1.234,5
+       1,234.5
+       -35,3
+       (35,3)
+       2.134.500
+    */
+
+    const regex =
+        /(?<![A-Za-z])(?:\(\s*-?\s*[0-9][0-9.,]*\s*\)|-\s*[0-9][0-9.,]*|[0-9][0-9.,]*)(?![A-Za-z])/g;
+
+
+    const matches =
+        text.match(
+            regex
         )
+        ||
+        [];
 
-    except Exception as error:
 
-        st.error(
-            f"{file.name}: "
-            f"gagal diproses — {error}"
+    const output = [];
+
+
+    for(
+        const raw
+        of matches
+    ){
+
+        const normalized =
+            raw
+                .replace(
+                    /[\s()]/g,
+                    ""
+                );
+
+
+        /*
+           Jangan membaca tahun
+           sebagai nominal.
+        */
+
+        if(
+            /^19\d{2}$/.test(
+                normalized
+            )
+            ||
+            /^20\d{2}$/.test(
+                normalized
+            )
+        ){
+
+            continue;
+
+        }
+
+
+        const value =
+            parseNumber(
+                raw
+            );
+
+
+        if(
+            value === null
+        ){
+
+            continue;
+
+        }
+
+
+        output.push({
+
+            raw,
+
+            value
+
+        });
+
+    }
+
+
+    return output;
+
+}
+
+
+/* =====================================================
+   NUMBER PARSER
+====================================================== */
+
+function parseNumber(
+    token
+){
+
+    if(!token){
+
+        return null;
+
+    }
+
+
+    const negative =
+        token.includes("(")
+        ||
+        token.trim().startsWith("-");
+
+
+    let s =
+        token
+            .replace(
+                /[()]/g,
+                ""
+            )
+            .replace(
+                /\s/g,
+                ""
+            )
+            .replace(
+                /[^0-9,.-]/g,
+                ""
+            );
+
+
+    if(
+        !/[0-9]/.test(
+            s
         )
+    ){
 
-    progress.progress(
-        idx / len(uploaded)
-    )
+        return null;
 
-
-if not all_rows:
-
-    st.error(
-        "Tidak ada PDF yang berhasil diproses."
-    )
-
-    st.stop()
+    }
 
 
-result_df = pd.concat(
-    all_rows,
-    ignore_index=True
-)
+    /*
+       1.234,5
+    */
+
+    if(
+        s.includes(",")
+        &&
+        s.includes(".")
+    ){
+
+        if(
+            s.lastIndexOf(",")
+            >
+            s.lastIndexOf(".")
+        ){
+
+            s =
+                s.replace(
+                    /\./g,
+                    ""
+                );
+
+            s =
+                s.replace(
+                    ",",
+                    "."
+                );
+
+        }
+        else{
+
+            s =
+                s.replace(
+                    /,/g,
+                    ""
+                );
+
+        }
+
+    }
+
+    /*
+       141,4
+       1,234
+    */
+
+    else if(
+        s.includes(",")
+    ){
+
+        const parts =
+            s.split(",");
 
 
-# =========================================================
-# SUMMARY
-# =========================================================
-
-confirmed = int(
-    (
-        result_df["Status"]
-        == "CONFIRMED"
-    ).sum()
-)
-
-check = int(
-    (
-        result_df["Status"]
-        == "CHECK"
-    ).sum()
-)
-
-review = int(
-    (
-        result_df["Status"]
-        == "REVIEW"
-    ).sum()
-)
+        const last =
+            parts[
+                parts.length - 1
+            ];
 
 
-m1, m2, m3, m4 = st.columns(4)
+        if(
+            last.length <= 2
+        ){
 
-m1.metric(
-    "📄 PDF",
-    len(uploaded)
-)
+            s =
+                parts
+                    .slice(
+                        0,
+                        -1
+                    )
+                    .join("")
+                +
+                "."
+                +
+                last;
 
-m2.metric(
-    "✅ Confirmed",
-    confirmed
-)
+        }
+        else{
 
-m3.metric(
-    "🟠 Check",
-    check
-)
+            s =
+                parts.join("");
 
-m4.metric(
-    "🔴 Review",
-    review
-)
+        }
+
+    }
+
+    /*
+       1.234.567
+    */
+
+    else if(
+        (
+            s.match(
+                /\./g
+            )
+            ||
+            []
+        ).length > 1
+    ){
+
+        s =
+            s.replace(
+                /\./g,
+                ""
+            );
+
+    }
+
+    /*
+       1.234
+       versus
+       141.4
+    */
+
+    else if(
+        s.includes(".")
+    ){
+
+        const last =
+            s.split(".").pop();
 
 
-# =========================================================
-# TABLE
-# =========================================================
+        if(
+            last.length === 3
+        ){
 
-st.markdown(
-    "### 📋 Hasil ekstraksi"
-)
+            s =
+                s.replace(
+                    ".",
+                    ""
+                );
 
-display_df = result_df.copy()
+        }
 
-for column in [
-    "Laba Bersih",
-    "Arus Kas Operasi",
-    "Total Aset"
-]:
+    }
 
-    display_df[column] = (
-        display_df[column]
-        .apply(
-            lambda x:
-                fmt_int(x)
-                if pd.notna(x)
-                else ""
+
+    const value =
+        Number(
+            s
+        );
+
+
+    if(
+        !Number.isFinite(
+            value
         )
-    )
+    ){
+
+        return null;
+
+    }
 
 
-st.dataframe(
-    display_df,
-    use_container_width=True,
-    hide_index=True
-)
+    return negative
+        ? -Math.abs(value)
+        : value;
+
+}
 
 
-# =========================================================
-# DOWNLOAD CSV / EXCEL
-# =========================================================
+/* =====================================================
+   UNIT
+====================================================== */
 
-csv_bytes = (
-    result_df
-    .to_csv(
-        index=False
-    )
-    .encode("utf-8-sig")
-)
+function detectUnit(
+    text
+){
+
+    const lower =
+        text.toLowerCase();
 
 
-excel_buffer = io.BytesIO()
+    if(
+        /(?:dalam|in)\s+(?:triliun|trillion)\s+(?:rupiah|rp)/i
+            .test(lower)
+    ){
 
-with pd.ExcelWriter(
-    excel_buffer,
-    engine="openpyxl"
-) as writer:
+        return "triliun";
 
-    result_df.to_excel(
-        writer,
-        index=False,
-        sheet_name="Hasil Ekstraksi"
-    )
+    }
 
-    worksheet = (
-        writer.book[
-            "Hasil Ekstraksi"
+
+    if(
+        /(?:dalam|in)\s+(?:miliar|milyar|billion)\s+(?:rupiah|rp)/i
+            .test(lower)
+    ){
+
+        return "miliar";
+
+    }
+
+
+    if(
+        /(?:dalam|in)\s+(?:juta|million)\s+(?:rupiah|rp)/i
+            .test(lower)
+    ){
+
+        return "juta";
+
+    }
+
+
+    if(
+        /(?:dalam|in)\s+(?:ribu|thousand)\s+(?:rupiah|rp)/i
+            .test(lower)
+    ){
+
+        return "ribu";
+
+    }
+
+
+    if(
+        /(?:dalam|in)\s+(?:rupiah|rp)/i
+            .test(lower)
+    ){
+
+        return "rupiah";
+
+    }
+
+
+    if(
+        /in\s+billion/i.test(
+            lower
+        )
+    ){
+
+        return "billion";
+
+    }
+
+
+    if(
+        /in\s+million/i.test(
+            lower
+        )
+    ){
+
+        return "million";
+
+    }
+
+
+    return null;
+
+}
+
+
+/* =====================================================
+   CONVERT TO RUPIAH
+====================================================== */
+
+function convertToRupiah(
+    value,
+    unit
+){
+
+    if(
+        value === null ||
+        value === undefined
+    ){
+
+        return null;
+
+    }
+
+
+    const multiplier =
+        UNIT_MULTIPLIER[
+            unit || "rupiah"
         ]
-    )
+        ||
+        1n;
 
-    for column in worksheet.columns:
 
-        max_length = max(
-            len(
-                str(
-                    cell.value
-                    or ""
-                )
-            )
-            for cell in column
+    /*
+       Ubah decimal menjadi integer
+       tanpa floating-point error.
+
+       Contoh:
+
+       141.4
+       ↓
+       1414 / 10
+
+       × 1.000.000.000
+
+       =
+       141.400.000.000
+    */
+
+    let str =
+        String(
+            value
+        );
+
+
+    let negative =
+        str.startsWith("-");
+
+
+    if(
+        negative
+    ){
+
+        str =
+            str.substring(
+                1
+            );
+
+    }
+
+
+    let integerPart =
+        str;
+
+    let decimalPart =
+        "";
+
+
+    if(
+        str.includes(".")
+    ){
+
+        const parts =
+            str.split(".");
+
+
+        integerPart =
+            parts[0];
+
+
+        decimalPart =
+            parts[1] || "";
+
+    }
+
+
+    /*
+       Batasi floating representation
+       yang tidak perlu.
+    */
+
+    decimalPart =
+        decimalPart
+            .replace(
+                /0+$/,
+                ""
+            );
+
+
+    const scale =
+        10n **
+        BigInt(
+            decimalPart.length
+        );
+
+
+    let numerator =
+        BigInt(
+            integerPart || "0"
         )
-
-        worksheet.column_dimensions[
-            column[0].column_letter
-        ].width = min(
-            max(
-                max_length + 2,
-                12
-            ),
-            32
-        )
+        *
+        scale;
 
 
-excel_bytes = (
-    excel_buffer
-    .getvalue()
-)
+    if(
+        decimalPart
+    ){
+
+        numerator +=
+            BigInt(
+                decimalPart
+            );
+
+    }
 
 
-b1, b2 = st.columns(2)
-
-with b1:
-
-    st.download_button(
-        "⬇️ Download CSV",
-        csv_bytes,
-        "hasil_finextract.csv",
-        "text/csv",
-        use_container_width=True
-    )
+    numerator *=
+        multiplier;
 
 
-with b2:
-
-    st.download_button(
-        "⬇️ Download Excel",
-        excel_bytes,
-        "hasil_finextract.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
+    let result =
+        numerator /
+        scale;
 
 
-# =========================================================
-# EVIDENCE
-# =========================================================
-
-st.markdown(
-    "### 🔎 Bukti & validasi"
-)
-
-st.caption(
-    "CONFIRMED = tiga nilai ditemukan "
-    "dengan pemetaan tahun dan satuan jelas. "
-    "CHECK = ada sinyal ambigu/lemah. "
-    "REVIEW = data belum lengkap atau bukti "
-    "tidak cukup."
-)
+    const remainder =
+        numerator %
+        scale;
 
 
-for (
-    file_name,
-    pages,
-    candidates
-) in all_evidence:
+    /*
+       ROUND HALF UP
+    */
 
-    st.markdown(
-        f"#### 📄 {file_name}"
-    )
+    if(
+        remainder * 2n >=
+        scale
+    ){
 
-    file_rows = result_df[
-        result_df["File"]
-        == file_name
-    ]
+        result +=
+            1n;
 
-    for _, row in file_rows.iterrows():
+    }
 
-        with st.expander(
-            f"{row['Tahun']} • {row['Status']}",
-            expanded=(
-                row["Status"]
-                != "CONFIRMED"
-            )
-        ):
 
-            columns = st.columns(3)
+    if(
+        negative
+    ){
 
-            mappings = [
+        result =
+            -result;
 
-                (
-                    "Laba Bersih",
-                    "Halaman Laba"
-                ),
+    }
 
-                (
-                    "Arus Kas Operasi",
-                    "Halaman Arus Kas"
-                ),
 
-                (
-                    "Total Aset",
-                    "Halaman Aset"
-                ),
+    return result;
+
+}
+
+
+/* =====================================================
+   YEAR HEADER
+====================================================== */
+
+function detectYearHeader(
+    lines
+){
+
+    let best =
+        null;
+
+
+    for(
+        let i = 0;
+        i < lines.length;
+        i++
+    ){
+
+        const years =
+            [
+                ...lines[i]
+                    .matchAll(
+                        /\b(19\d{2}|20\d{2})\b/g
+                    )
             ]
+            .map(
+                match =>
+                    Number(
+                        match[1]
+                    )
+            );
 
-            for col, (
-                name,
-                page_name
-            ) in zip(
-                columns,
-                mappings
-            ):
 
-                with col:
+        const unique =
+            [
+                ...new Set(
+                    years
+                )
+            ];
 
-                    st.markdown(
-                        f"**{name}**"
+
+        if(
+            unique.length >= 2
+            &&
+            unique.length <= 8
+        ){
+
+            if(
+                !best
+                ||
+                unique.length >
+                best.years.length
+            ){
+
+                best = {
+
+                    lineIndex:i,
+
+                    years:unique
+
+                };
+
+            }
+
+        }
+
+    }
+
+
+    return best;
+
+}
+
+
+/* =====================================================
+   LINES
+====================================================== */
+
+function makeLines(
+    text
+){
+
+    let lines =
+        String(
+            text || ""
+        )
+        .split(
+            /\n/
+        )
+        .map(
+            x =>
+                x.trim()
+        )
+        .filter(
+            Boolean
+        );
+
+
+    /*
+       Kalau PDF memberikan text
+       sebagai satu baris panjang,
+       pecah berdasarkan label penting.
+    */
+
+    if(
+        lines.length < 3
+    ){
+
+        lines =
+            String(
+                text || ""
+            )
+            .split(
+                /(?=(?:Laba|Laporan|Arus Kas|Total Aset|Jumlah Aset|Net Income|Cash Flow|Total Assets))/i
+            )
+            .map(
+                x =>
+                    x.trim()
+            )
+            .filter(
+                Boolean
+            );
+
+    }
+
+
+    return lines;
+
+}
+
+
+/* =====================================================
+   COMPANY
+====================================================== */
+
+function detectCompany(
+    text,
+    filename
+){
+
+    const patterns = [
+
+        /PT\s+[A-Z][A-Za-z0-9 .,&'’()-]{3,100}\s+(?:Tbk\.?|TBK)/i,
+
+        /PT\s+[A-Z][A-Za-z0-9 .,&'’()-]{3,100}/i
+
+    ];
+
+
+    for(
+        const pattern
+        of patterns
+    ){
+
+        const match =
+            text.match(
+                pattern
+            );
+
+
+        if(
+            match
+        ){
+
+            return match[0]
+                .replace(
+                    /\s+/g,
+                    " "
+                )
+                .trim();
+
+        }
+
+    }
+
+
+    return filename
+        .replace(
+            /\.pdf$/i,
+            ""
+        );
+
+}
+
+
+/* =====================================================
+   CODE
+====================================================== */
+
+function detectCode(
+    text
+){
+
+    const patterns = [
+
+        /(?:ticker|stock\s+code|kode\s+saham)\s*[:\-]?\s*([A-Z]{2,6})\b/i,
+
+        /\b([A-Z]{2,6})\s+(?:Stock|Shares)\b/i
+
+    ];
+
+
+    for(
+        const pattern
+        of patterns
+    ){
+
+        const match =
+            text.match(
+                pattern
+            );
+
+
+        if(
+            match
+        ){
+
+            return match[1]
+                .toUpperCase();
+
+        }
+
+    }
+
+
+    return "";
+
+}
+
+
+/* =====================================================
+   YEARS
+====================================================== */
+
+function parseYears(
+    value
+){
+
+    return [
+        ...new Set(
+
+            String(
+                value
+            )
+            .split(",")
+            .map(
+                x =>
+                    Number(
+                        x.trim()
+                    )
+            )
+            .filter(
+                year =>
+                    Number.isInteger(
+                        year
+                    )
+                    &&
+                    year >= 1900
+                    &&
+                    year <= 2100
+            )
+
+        )
+
+    ];
+
+}
+
+
+/* =====================================================
+   PROGRESS
+====================================================== */
+
+function setProgress(
+    percent,
+    title,
+    detail
+){
+
+    const safe =
+        Math.max(
+            0,
+            Math.min(
+                100,
+                percent
+            )
+        );
+
+
+    progressBar.style.width =
+        safe + "%";
+
+
+    progressPercent.textContent =
+        Math.round(
+            safe
+        )
+        +
+        "%";
+
+
+    progressTitle.textContent =
+        title;
+
+
+    progressDetail.textContent =
+        detail;
+
+}
+
+
+/* =====================================================
+   RENDER RESULTS
+====================================================== */
+
+function renderResults(){
+
+    resultTable.innerHTML = "";
+
+
+    for(
+        const row
+        of results
+    ){
+
+        const tr =
+            document.createElement(
+                "tr"
+            );
+
+
+        const pages =
+            [
+                row.labaPage,
+                row.cashPage,
+                row.assetsPage
+            ]
+            .filter(
+                page =>
+                    page !== null
+            );
+
+
+        const uniquePages =
+            [
+                ...new Set(
+                    pages
+                )
+            ];
+
+
+        tr.innerHTML = `
+
+            <td
+                class="file-cell"
+                title="${escapeHTML(
+                    row.file
+                )}"
+            >
+
+                ${escapeHTML(
+                    row.file
+                )}
+
+            </td>
+
+
+            <td>
+
+                ${escapeHTML(
+                    row.company
+                )}
+
+            </td>
+
+
+            <td>
+
+                ${
+                    row.code
+                    ? escapeHTML(
+                        row.code
+                    )
+                    : "—"
+                }
+
+            </td>
+
+
+            <td>
+
+                <strong>
+                    ${row.year}
+                </strong>
+
+            </td>
+
+
+            <td class="num">
+
+                ${formatInteger(
+                    row.laba
+                )}
+
+            </td>
+
+
+            <td class="num">
+
+                ${formatInteger(
+                    row.cashflow
+                )}
+
+            </td>
+
+
+            <td class="num">
+
+                ${formatInteger(
+                    row.assets
+                )}
+
+            </td>
+
+
+            <td>
+
+                ${
+                    uniquePages.length
+                    ? uniquePages.join(
+                        ", "
+                    )
+                    : "—"
+                }
+
+            </td>
+
+
+            <td>
+
+                ${statusBadge(
+                    row.status
+                )}
+
+            </td>
+
+        `;
+
+
+        resultTable.appendChild(
+            tr
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   STATUS BADGE
+====================================================== */
+
+function statusBadge(
+    status
+){
+
+    if(
+        status ===
+        "CONFIRMED"
+    ){
+
+        return `
+
+            <span
+                class="badge-status confirmed"
+            >
+                ✓ CONFIRMED
+            </span>
+
+        `;
+
+    }
+
+
+    if(
+        status ===
+        "CHECK"
+    ){
+
+        return `
+
+            <span
+                class="badge-status check"
+            >
+                ! CHECK
+            </span>
+
+        `;
+
+    }
+
+
+    return `
+
+        <span
+            class="badge-status review"
+        >
+            ! REVIEW
+        </span>
+
+    `;
+
+}
+
+
+/* =====================================================
+   METRICS
+====================================================== */
+
+function updateMetrics(){
+
+    metricPdf.textContent =
+        files.length;
+
+
+    metricConfirmed.textContent =
+        results.filter(
+            row =>
+                row.status ===
+                "CONFIRMED"
+        ).length;
+
+
+    metricCheck.textContent =
+        results.filter(
+            row =>
+                row.status ===
+                "CHECK"
+        ).length;
+
+
+    metricReview.textContent =
+        results.filter(
+            row =>
+                row.status ===
+                "REVIEW"
+        ).length;
+
+}
+
+
+/* =====================================================
+   EVIDENCE
+====================================================== */
+
+function renderEvidence(){
+
+    evidenceContainer.innerHTML = "";
+
+
+    if(
+        evidence.length === 0
+    ){
+
+        evidenceContainer.innerHTML = `
+
+            <div class="notice warning">
+
+                Tidak ada evidence yang cukup
+                untuk ditampilkan.
+
+                Silakan cek data secara manual.
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    const groups = {};
+
+
+    for(
+        const item
+        of evidence
+    ){
+
+        const key =
+            [
+                item.file,
+                item.year
+            ]
+            .join(
+                "__"
+            );
+
+
+        if(
+            !groups[key]
+        ){
+
+            groups[key] = [];
+
+        }
+
+
+        groups[key].push(
+            item
+        );
+
+    }
+
+
+    Object.values(
+        groups
+    )
+    .forEach(
+        items => {
+
+            const card =
+                document.createElement(
+                    "div"
+                );
+
+
+            card.className =
+                "evidence-card";
+
+
+            const first =
+                items[0];
+
+
+            const head =
+                document.createElement(
+                    "button"
+                );
+
+
+            head.className =
+                "evidence-head";
+
+
+            head.innerHTML = `
+
+                <div>
+
+                    <div class="evidence-title">
+
+                        ${escapeHTML(
+                            first.file
+                        )}
+
+                        • ${first.year}
+
+                    </div>
+
+                    <div class="evidence-meta">
+
+                        ${items.length}
+                        bukti ditemukan
+
+                    </div>
+
+                </div>
+
+                <div>
+                    ▾
+                </div>
+
+            `;
+
+
+            const body =
+                document.createElement(
+                    "div"
+                );
+
+
+            body.className =
+                "evidence-body";
+
+
+            for(
+                const item
+                of items
+            ){
+
+                const block =
+                    document.createElement(
+                        "div"
+                    );
+
+
+                block.className =
+                    "evidence-block";
+
+
+                block.innerHTML = `
+
+                    <div class="evidence-label">
+
+                        ${escapeHTML(
+                            item.label
+                        )}
+
+                        • Halaman
+                        ${item.page}
+
+                        • Satuan
+                        ${escapeHTML(
+                            item.unit
+                        )}
+
+                        • Score
+                        ${item.score}
+
+                    </div>
+
+
+                    <div class="evidence-text">
+
+${escapeHTML(
+    item.text
+)}
+
+                    </div>
+
+
+                    <div class="evidence-result">
+
+                        Nilai laporan:
+
+                        <strong>
+                            ${escapeHTML(
+                                item.raw
+                            )}
+                        </strong>
+
+                        →
+
+                        Nilai Rupiah:
+
+                        <strong>
+                            ${formatInteger(
+                                item.converted
+                            )}
+                        </strong>
+
+                    </div>
+
+                `;
+
+
+                body.appendChild(
+                    block
+                );
+
+            }
+
+
+            card.appendChild(
+                head
+            );
+
+            card.appendChild(
+                body
+            );
+
+
+            head.addEventListener(
+                "click",
+                function(){
+
+                    body.classList.toggle(
+                        "open"
+                    );
+
+                }
+            );
+
+
+            evidenceContainer.appendChild(
+                card
+            );
+
+        }
+    );
+
+}
+
+
+/* =====================================================
+   FORMAT INTEGER
+====================================================== */
+
+function formatInteger(
+    value
+){
+
+    if(
+        value === null ||
+        value === undefined
+    ){
+
+        return "—";
+
+    }
+
+
+    let string =
+        value.toString();
+
+
+    let negative =
+        string.startsWith("-");
+
+
+    if(
+        negative
+    ){
+
+        string =
+            string.substring(
+                1
+            );
+
+    }
+
+
+    let result =
+        "";
+
+
+    while(
+        string.length > 3
+    ){
+
+        result =
+            "."
+            +
+            string.slice(
+                -3
+            )
+            +
+            result;
+
+
+        string =
+            string.slice(
+                0,
+                -3
+            );
+
+    }
+
+
+    result =
+        string
+        +
+        result;
+
+
+    return negative
+        ? "-" + result
+        : result;
+
+}
+
+
+/* =====================================================
+   CSV
+====================================================== */
+
+csvButton.addEventListener(
+    "click",
+    function(){
+
+        const headers = [
+
+            "File",
+
+            "Perusahaan",
+
+            "Kode",
+
+            "Tahun",
+
+            "Laba Bersih",
+
+            "Arus Kas Aktivitas Operasi",
+
+            "Total Aset",
+
+            "Halaman Laba",
+
+            "Halaman Arus Kas",
+
+            "Halaman Aset",
+
+            "Status",
+
+            "Catatan"
+
+        ];
+
+
+        const rows =
+            results.map(
+                row => [
+
+                    row.file,
+
+                    row.company,
+
+                    row.code,
+
+                    row.year,
+
+                    row.laba === null
+                        ? ""
+                        : row.laba.toString(),
+
+                    row.cashflow === null
+                        ? ""
+                        : row.cashflow.toString(),
+
+                    row.assets === null
+                        ? ""
+                        : row.assets.toString(),
+
+                    row.labaPage ?? "",
+
+                    row.cashPage ?? "",
+
+                    row.assetsPage ?? "",
+
+                    row.status,
+
+                    row.notes.join(
+                        " | "
                     )
 
-                    value = row[name]
+                ]
+            );
 
-                    st.write(
-                        fmt_int(value)
-                        if pd.notna(value)
-                        else "—"
-                    )
 
-                    page = row[
-                        page_name
-                    ]
-
-                    st.caption(
-                        "Halaman: "
-                        + (
-                            str(int(page))
-                            if pd.notna(page)
-                            else "—"
+        const csv =
+            [
+                headers,
+                ...rows
+            ]
+            .map(
+                row =>
+                    row
+                        .map(
+                            csvEscape
                         )
-                    )
-
-            st.markdown(
-                f"**Catatan:** "
-                f"{row['Catatan']}"
+                        .join(",")
             )
+            .join("\n");
 
-            evidence_targets = [
 
-                (
-                    "LABA BERSIH",
-                    "Laba"
-                ),
+        downloadBlob(
+            "\ufeff" + csv,
+            "hasil_finextract.csv",
+            "text/csv;charset=utf-8"
+        );
 
-                (
-                    "ARUS KAS AKTIVITAS OPERASI",
-                    "Arus Kas"
-                ),
+    }
+);
 
-                (
-                    "TOTAL ASET",
-                    "Aset"
-                ),
+
+/* =====================================================
+   XLSX
+====================================================== */
+
+xlsxButton.addEventListener(
+    "click",
+    function(){
+
+        if(
+            !window.XLSX
+        ){
+
+            alert(
+                "Library Excel belum tersedia. Coba refresh halaman."
+            );
+
+            return;
+
+        }
+
+
+        const data = [
+
+            [
+
+                "File",
+
+                "Perusahaan",
+
+                "Kode",
+
+                "Tahun",
+
+                "Laba Bersih",
+
+                "Arus Kas Aktivitas Operasi",
+
+                "Total Aset",
+
+                "Halaman Laba",
+
+                "Halaman Arus Kas",
+
+                "Halaman Aset",
+
+                "Status",
+
+                "Catatan"
+
             ]
 
-            for target, label in (
-                evidence_targets
-            ):
+        ];
 
-                picked = choose_candidate(
-                    candidates,
-                    target,
-                    int(row["Tahun"])
+
+        for(
+            const row
+            of results
+        ){
+
+            data.push([
+
+                row.file,
+
+                row.company,
+
+                row.code,
+
+                row.year,
+
+                row.laba === null
+                    ? null
+                    : Number(
+                        row.laba
+                    ),
+
+                row.cashflow === null
+                    ? null
+                    : Number(
+                        row.cashflow
+                    ),
+
+                row.assets === null
+                    ? null
+                    : Number(
+                        row.assets
+                    ),
+
+                row.labaPage,
+
+                row.cashPage,
+
+                row.assetsPage,
+
+                row.status,
+
+                row.notes.join(
+                    " | "
                 )
 
-                if picked:
+            ]);
 
-                    candidate = picked[
-                        "candidate"
-                    ]
-
-                    unit = (
-                        candidate["unit"]
-                        or "rupiah (diasumsikan)"
-                    )
-
-                    st.markdown(
-                        f"**Bukti {label} — "
-                        f"halaman "
-                        f"{candidate['page']} "
-                        f"— satuan {unit}**"
-                    )
-
-                    st.markdown(
-                        f"""
-                        <div class="evidence">
-                        {candidate["evidence"]}
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+        }
 
 
-st.markdown("---")
+        const worksheet =
+            XLSX.utils.aoa_to_sheet(
+                data
+            );
 
-st.caption(
-    "FinExtract tidak menjamin kebenaran absolut. "
-    "Untuk dataset skripsi, setiap nilai CHECK/REVIEW "
-    "wajib diverifikasi terhadap tabel asli pada "
-    "halaman yang ditunjukkan."
-)
+
+        worksheet[
+            "!cols"
+        ] = [
+
+            {wch:28},
+
+            {wch:35},
+
+            {wch:10},
+
+            {wch:10},
+
+            {wch:20},
+
+            {wch:25},
+
+            {wch:20},
+
+            {wch:15},
+
+            {wch:18},
+
+            {wch:15},
+
+            {wch:14},
+
+            {wch:55}
+
+        ];
+
+
+        const workbook =
+            XLSX.utils.book_new();
+
+
+        XLSX.utils.book_append_sheet(
+            workbook,
+            worksheet,
+            "Hasil Ekstraksi"
+        );
+
+
+        XLSX.writeFile(
+            workbook,
+            "hasil_finextract.xlsx"
+        );
+
+    }
+);
+
+
+/* =====================================================
+   CSV ESCAPE
+====================================================== */
+
+function csvEscape(
+    value
+){
+
+    const text =
+        String(
+            value ?? ""
+        );
+
+
+    if(
+        /[",\n]/.test(
+            text
+        )
+    ){
+
+        return (
+            '"'
+            +
+            text.replace(
+                /"/g,
+                '""'
+            )
+            +
+            '"'
+        );
+
+    }
+
+
+    return text;
+
+}
+
+
+/* =====================================================
+   DOWNLOAD
+====================================================== */
+
+function downloadBlob(
+    content,
+    filename,
+    type
+){
+
+    const blob =
+        new Blob(
+            [content],
+            {
+                type
+            }
+        );
+
+
+    const url =
+        URL.createObjectURL(
+            blob
+        );
+
+
+    const a =
+        document.createElement(
+            "a"
+        );
+
+
+    a.href =
+        url;
+
+
+    a.download =
+        filename;
+
+
+    document.body.appendChild(
+        a
+    );
+
+
+    a.click();
+
+
+    a.remove();
+
+
+    setTimeout(
+        function(){
+
+            URL.revokeObjectURL(
+                url
+            );
+
+        },
+        1000
+    );
+
+}
+
+
+/* =====================================================
+   BYTES
+====================================================== */
+
+function formatBytes(
+    bytes
+){
+
+    if(
+        bytes === 0
+    ){
+
+        return "0 Bytes";
+
+    }
+
+
+    const units = [
+
+        "Bytes",
+        "KB",
+        "MB",
+        "GB"
+
+    ];
+
+
+    const i =
+        Math.floor(
+            Math.log(
+                bytes
+            )
+            /
+            Math.log(
+                1024
+            )
+        );
+
+
+    return (
+
+        (
+            bytes /
+            Math.pow(
+                1024,
+                i
+            )
+        )
+        .toFixed(
+            i === 0
+                ? 0
+                : 1
+        )
+
+        +
+
+        " "
+
+        +
+
+        units[i]
+
+    );
+
+}
+
+
+/* =====================================================
+   ESCAPE HTML
+====================================================== */
+
+function escapeHTML(
+    value
+){
+
+    return String(
+        value ?? ""
+    )
+    .replace(
+        /&/g,
+        "&amp;"
+    )
+    .replace(
+        /</g,
+        "&lt;"
+    )
+    .replace(
+        />/g,
+        "&gt;"
+    )
+    .replace(
+        /"/g,
+        "&quot;"
+    )
+    .replace(
+        /'/g,
+        "&#039;"
+    );
+
+}
+
+
+/* =====================================================
+   INIT
+====================================================== */
+
+renderFiles();
+
+console.log(
+    "FinExtract successfully loaded."
+);
+
+</script>
+
+
+</body>
+
+</html>
